@@ -6,8 +6,11 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sodiumoxide::crypto::secretbox;
 
 use zcash_encoding::{Optional, Vector};
-
-use zcash_primitives::{consensus, sapling::PaymentAddress, zip32::{ExtendedFullViewingKey, ExtendedSpendingKey}};
+use zcash_primitives::{
+    consensus,
+    sapling::PaymentAddress,
+    zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+};
 
 use crate::lightclient::lightclient_config::LightClientConfig;
 
@@ -156,19 +159,23 @@ impl WalletZKey {
 
         out.write_u8(self.locked as u8)?;
 
-        Optional::write(&mut out, self.extsk.as_ref(), |w, sk| ExtendedSpendingKey::write(sk, w))?;
+        Optional::write(&mut out, self.extsk.as_ref(), |w, sk| {
+            ExtendedSpendingKey::write(&sk, w)
+        })?;
 
         ExtendedFullViewingKey::write(&self.extfvk, &mut out)?;
 
-        Optional::write(&mut out, self.hdkey_num.as_ref(), |o, n| o.write_u32::<LittleEndian>(*n))?;
+        Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
 
         // Write enc_key
         Optional::write(&mut out, self.enc_key.as_ref(), |o, v| {
-            Vector::write(o, v, |o, n| o.write_u8(*n))
+            Vector::write(o, &v[..], |o, n| o.write_u8(*n))
         })?;
 
         // Write nonce
-        Optional::write(&mut out, self.nonce.as_ref(), |o, v| Vector::write(o, v, |o, n| o.write_u8(*n)))
+        Optional::write(&mut out, self.nonce.as_ref(), |o, v| {
+            Vector::write(o, &v[..], |o, n| o.write_u8(*n))
+        })
     }
 
     pub fn lock(&mut self) -> io::Result<()> {
@@ -199,8 +206,9 @@ impl WalletZKey {
         Ok(())
     }
 
-    pub fn unlock<P: consensus::Parameters + Send + Sync+ 'static>(
-        &mut self, config: &LightClientConfig<P>,
+    pub fn unlock<P: consensus::Parameters + Send + Sync + 'static>(
+        &mut self,
+        config: &LightClientConfig<P>,
         bip39_seed: &[u8],
         key: &secretbox::Key,
     ) -> io::Result<()> {
@@ -317,7 +325,7 @@ pub mod tests {
     };
 
     use super::WalletZKey;
-    use crate::lightclient::lightclient_config::{LightClientConfig,UnitTestNetwork};
+    use crate::lightclient::lightclient_config::{LightClientConfig, UnitTestNetwork};
 
     fn get_config() -> LightClientConfig<UnitTestNetwork> {
         LightClientConfig {
@@ -327,7 +335,7 @@ pub mod tests {
             sapling_activation_height: 0,
             anchor_offset: [0u32; 5],
             data_dir: None,
-            params: UnitTestNetwork
+            params: UnitTestNetwork,
         }
     }
 

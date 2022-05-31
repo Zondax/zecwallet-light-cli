@@ -7,7 +7,7 @@ use log::info;
 use std::sync::Arc;
 use tokio::{
     sync::{
-        mpsc::{channel, Sender, UnboundedSender},
+        mpsc::{unbounded_channel, UnboundedSender},
         oneshot, RwLock,
     },
     task::JoinHandle,
@@ -120,27 +120,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                 let mut wallet_tx = false;
 
                 for (output_num, co) in ctx.outputs.iter().enumerate() {
-                    /*
-                    let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
-                    let epk = match co.epk() {
-                        Err(_) => continue,
-                        Ok(epk) => epk,
-                    };
-                     */
-                    for (_, ivk) in ivks.iter().map(|k| SaplingIvk(k.0)).enumerate() {
-/*                        let co_desc = CompactOutputDescription {
-                            cmu: *co.cmu()?,
-                            ephemeral_key: *co.epk()?,
-                            enc_ciphertext: *co.ciphertext.try_into().map_err(|_| ())?,
-                        };
-
- */
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.get_params(),
-                            height,
-                            &ivk,
-                            co,
-                        ) {
+                    for (i, ivk) in ivks.iter().enumerate() {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                        {
                             wallet_tx = true;
 
                             let keys = keys.clone();

@@ -9,7 +9,7 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_primitives::{consensus::{BranchId, BlockHeight}, consensus, transaction::Transaction};
+use zcash_primitives::{consensus::{self, BranchId, BlockHeight, Paramters}, transaction::Transaction};
 
 pub struct FetchTaddrTxns<P> {
     keys: Arc<RwLock<Keystores<P>>>,
@@ -145,11 +145,12 @@ mod test {
     use tokio::sync::oneshot::{self};
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
+
     use zcash_primitives::consensus::BlockHeight;
     use crate::compact_formats::RawTransaction;
     use crate::lightclient::faketx;
     use crate::lightclient::lightclient_config::UnitTestNetwork;
-    use zcash_primitives::transaction::Transaction;
+    use zcash_primitives::transaction::{Transaction, TransactionData};
 
     use crate::lightwallet::keys::InMemoryKeys;
     use crate::lightwallet::wallettkey::WalletTKey;

@@ -3956,7 +3956,7 @@ dependencies = [
 
 [[package]]
 name = "zecwallet-cli"
-version = "1.7.12"
+version = "1.7.13"
 dependencies = [
  "byteorder",
  "clap",

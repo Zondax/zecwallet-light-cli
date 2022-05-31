@@ -21,12 +21,28 @@ use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 
-use zcash_primitives::{block::BlockHash, constants::SPENDING_KEY_GENERATOR, keys::OutgoingViewingKey, legacy::{Script, TransparentAddress}, memo::Memo, merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath}, sapling::prover::TxProver, sapling::redjubjub::Signature, sapling::note_encryption::SaplingDomain, sapling::{Diversifier, Node, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment}, transaction::{Authorized,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             components::{Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
-                                                                                                                                                                                                                                                                                                                                                                                                                                                             Transaction, TransactionData, TxId,
-}, zip32::{ExtendedFullViewingKey, ExtendedSpendingKey}, consensus, transaction};
-use zcash_primitives::consensus::{BlockHeight, BranchId, TEST_NETWORK};
-use zcash_primitives::transaction::components::transparent;
+use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption, ShieldedOutput};
+use zcash_primitives::{
+    block::BlockHash,
+    consensus::{self, BlockHeight, BranchId, TEST_NETWORK},
+    constants::SPENDING_KEY_GENERATOR,
+    keys::OutgoingViewingKey,
+    legacy::{Script, TransparentAddress},
+    memo::Memo,
+    merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
+    sapling::{
+        note_encryption::SaplingDomain,
+        prover::TxProver,
+        redjubjub::{self, Signature},
+        Node,
+    },
+    sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
+    transaction::{
+        components::{transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        Authorized, Transaction, TransactionData, TxId,
+    },
+    zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
+};
 use zcash_proofs::sapling::SaplingProvingContext;
 
 pub fn random_u8_32() -> [u8; 32] {
@@ -96,7 +112,12 @@ impl FakeTransaction {
             rseed: Rseed::AfterZip212(rseed_bytes),
         };
 
-        let encryptor = NoteEncryption::<SaplingDomain<consensus::Network>>::new(ovk, note.clone(), to.clone(), Memo::default().into());
+        let encryptor = NoteEncryption::<SaplingDomain<consensus::Network>>::new(
+            ovk,
+            note.clone(),
+            to.clone(),
+            Memo::default().into(),
+        );
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
@@ -198,6 +219,7 @@ impl FakeTransaction {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
         });
+        self.td.transparent_bundle = Some(t_bundle);
 
         self.td = TransactionData::from_parts(
             self.td.version(),
@@ -275,6 +297,7 @@ impl FakeCompactBlock {
     }
 
     pub fn add_txs(&mut self, ctxs: Vec<CompactTx>) {
+        println!("Adding {} txns to fake server", ctxs.len());
         self.block.vtx.extend(ctxs);
     }
 
@@ -350,10 +373,11 @@ impl FakeCompactBlockList {
     ) {        let sent_txns = data.write().await.sent_txns.split_off(0);
 
         for rtx in sent_txns {
-            let tx = Transaction::read(&rtx.data[..],
-                                       BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(rtx.height as u32)),
-
-            ).unwrap();
+            let tx = Transaction::read(
+                &rtx.data[..],
+                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(rtx.height as u32)),
+            )
+            .unwrap();
             let mut ctx = CompactTx::default();
 
             if let Some(s_bundle) = tx.sapling_bundle() {
@@ -373,6 +397,7 @@ impl FakeCompactBlockList {
                     ctx.spends.push(cs);
                 }
             }
+
             let config = data.read().await.config.clone();
             let taddrs = if let Some(t_bundle) = tx.transparent_bundle() {
                 t_bundle
@@ -508,14 +533,7 @@ impl TxProver for FakeTxProver {
         value: u64,
         _anchor: bls12_381::Scalar,
         _merkle_path: MerklePath<Node>,
-    ) -> Result<
-        (
-            [u8; GROTH_PROOF_SIZE],
-            jubjub::ExtendedPoint,
-            zcash_primitives::sapling::redjubjub::PublicKey,
-        ),
-        (),
-    > {
+    ) -> Result<([u8; GROTH_PROOF_SIZE], jubjub::ExtendedPoint, redjubjub::PublicKey), ()> {
         let zkproof = [0u8; GROTH_PROOF_SIZE];
 
         let mut rng = OsRng;
@@ -526,8 +544,7 @@ impl TxProver for FakeTxProver {
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
 
-        let rk = zcash_primitives::sapling::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
-            .randomize(ar, SPENDING_KEY_GENERATOR);
+        let rk = redjubjub::PublicKey(proof_generation_key.ak.clone().into()).randomize(ar, SPENDING_KEY_GENERATOR);
 
         Ok((zkproof, value_commitment, rk))
     }

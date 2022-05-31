@@ -20,8 +20,8 @@ use tonic::{
     transport::{Channel, Error},
     Request,
 };
-use zcash_primitives::consensus;
-use zcash_primitives::consensus::{BlockHeight, BranchId};
+
+use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::transaction::{Transaction, TxId};
 
 #[derive(Clone)]
@@ -228,7 +228,7 @@ impl GrpcConnector {
             hash: txid.as_ref().to_vec(),
         });
 
-        // log::info!("Full fetching {}", txid);
+        log::info!("Full fetching {}", txid);
 
         let mut client = client
             .get_client()

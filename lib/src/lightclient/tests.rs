@@ -4,8 +4,8 @@ use std::path::Path;
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
-use rand::RngCore;
 use rand::rngs::OsRng;
+use rand::RngCore;
 use tempdir::TempDir;
 use tokio::runtime::Runtime;
 use tonic::transport::Channel;
@@ -367,9 +367,12 @@ async fn multiple_incoming_same_tx() {
             rseed: Rseed::AfterZip212(rseed_bytes),
         };
 
-        let encryptor =
-            NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::
-            new(None, note.clone(), to.clone(), Memo::default().into());
+        let encryptor = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
+            None,
+            note.clone(),
+            to.clone(),
+            Memo::default().into(),
+        );
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
@@ -774,6 +777,7 @@ async fn t_incoming_t_outgoing() {
 
     // 5. Test the unconfirmed send.
     let list = lc.do_list_transactions(false).await;
+    println!("{}", list.pretty(2));
     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
     assert_eq!(list[1]["txid"], sent_txid);
     assert_eq!(
@@ -1067,6 +1071,8 @@ async fn no_change() {
     ready_rx.await.unwrap();
 
     let lc = LightClient::test_new(&config, None, 0).await.unwrap();
+    lc.init_logging().unwrap();
+
     let mut fcbl = FakeCompactBlockList::new(0);
 
     // 1. Mine 10 blocks
@@ -1085,6 +1091,9 @@ async fn no_change() {
     let (_ztx, _height, _) = fcbl.add_tx_paying(&extfvk1, zvalue);
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
     mine_random_blocks(&mut fcbl, &data, &lc, 5).await;
+
+    let notes = lc.do_list_notes(true).await;
+    println!("{}", notes.pretty(2));
 
     // 3. Send an incoming t-address txn
     let sk = lc.wallet.in_memory_keys().await.expect("in memory keystore").tkeys[0].clone();
@@ -1371,8 +1380,8 @@ async fn mempool_clearing() {
     let tx = Transaction::read(
         &sent_tx.data[..],
         BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(sent_tx.height as u32)),
-    )
-        .unwrap();
+    ).unwrap();
+
     FetchFullTxns::scan_full_tx(
         config,
         tx,

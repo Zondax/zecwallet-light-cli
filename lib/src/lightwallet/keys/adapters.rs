@@ -5,16 +5,22 @@ use std::{
 
 use async_trait::async_trait;
 use derive_more::From;
+use group::GroupEncoding;
 use jubjub::AffinePoint;
 use secp256k1::PublicKey as SecpPublicKey;
-use group::GroupEncoding;
-use thiserror::Error;
 use std::sync::mpsc;
+use thiserror::Error;
 use zcash_client_backend::encoding::encode_payment_address;
-use zcash_primitives::{consensus::{BlockHeight, Parameters}, consensus, keys::OutgoingViewingKey, legacy::TransparentAddress, sapling::{Note, Nullifier, PaymentAddress, SaplingIvk}};
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::Transaction;
+use zcash_primitives::{
+    consensus,
+    consensus::{BlockHeight, Parameters},
+    keys::OutgoingViewingKey,
+    legacy::TransparentAddress,
+    sapling::{Note, Nullifier, PaymentAddress, SaplingIvk},
+};
 
 use crate::{
     lightclient::lightclient_config::LightClientConfig,
@@ -62,7 +68,7 @@ pub enum BuildersError {
     Ledger(#[from] LedgerError),
 }
 
-impl <P: Parameters> Keystores<P> {
+impl<P: Parameters> Keystores<P> {
     pub fn in_memory(&self) -> Result<&InMemoryKeys<P>, io::Error> {
         match self {
             Self::Memory(this) => Ok(this),
@@ -85,7 +91,7 @@ impl <P: Parameters> Keystores<P> {
 }
 
 #[cfg(feature = "ledger-support")]
-impl <P: Parameters> Keystores<P> {
+impl<P: Parameters> Keystores<P> {
     pub fn ledger(&self) -> Result<&LedgerKeystore<P>, io::Error> {
         match self {
             Self::Ledger(this) => Ok(this),
@@ -107,7 +113,7 @@ impl <P: Parameters> Keystores<P> {
     }
 }
 
-impl <P: consensus::Parameters + Send + Sync+ 'static>Keystores<P> {
+impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
     pub fn as_kind(&self) -> KeystoresKind {
         match self {
             Self::Memory(_) => KeystoresKind::Memory,
@@ -177,7 +183,7 @@ impl <P: consensus::Parameters + Send + Sync+ 'static>Keystores<P> {
     }
 
     /// Retrieve all known ZAddrs in the keystore
-    pub async fn get_all_zaddresses(&self) -> impl Iterator<Item = String> + '_  {
+    pub async fn get_all_zaddresses(&self) -> impl Iterator<Item = String> + '_ {
         //see comment inside `get_all_ivks`
 
         let (memory, ledger) = match self {
@@ -190,7 +196,7 @@ impl <P: consensus::Parameters + Send + Sync+ 'static>Keystores<P> {
     }
 
     /// Retrieve all ZAddrs in the keystore which we have the spending key for
-    pub async fn get_all_spendable_zaddresses(&self) -> impl Iterator<Item = String> + '_{
+    pub async fn get_all_spendable_zaddresses(&self) -> impl Iterator<Item = String> + '_ {
         //see comment inside `get_all_ivks`
 
         let (memory, ledger) = match self {
@@ -403,7 +409,7 @@ impl <P: consensus::Parameters + Send + Sync+ 'static>Keystores<P> {
 }
 
 //serialization stuff
-impl <P: Parameters + Send + Sync + 'static>Keystores<P> {
+impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
     /// Indicates whether the keystore is ready to be saved to file
     pub fn writable(&self) -> bool {
         match self {
@@ -476,7 +482,7 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
         ovk: Option<zcash_primitives::keys::OutgoingViewingKey>,
         to: zcash_primitives::sapling::PaymentAddress,
         value: zcash_primitives::transaction::components::Amount,
-        memo: Option<zcash_primitives::memo::MemoBytes>,
+        memo: zcash_primitives::memo::MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
         match self {
             Self::Memory(this) => this.add_sapling_output(ovk, to, value, memo).map(|_| ())?,
@@ -546,11 +552,11 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
         mut self,
         consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
-    )  -> Result<(Transaction, SaplingMetadata), Self::Error> {
+    ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         match self {
             Self::Memory(this) => this.build(consensus, prover).await.map_err(Into::into),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this.build(consensus,  prover).await.map_err(Into::into),
+            Self::Ledger(this) => this.build(consensus, prover).await.map_err(Into::into),
         }
     }
 }

@@ -35,7 +35,7 @@ webpki-roots = "0.21.0"
 async-trait = "0.1.53"
 
 lazy_static = "1.4.0"
-secp256k1 = "0.21"
+secp256k1 = "=0.21.3"
 ripemd160 = "0.9.1"
 sha2 = "0.9.5"
 base58 = "0.1.0"
@@ -57,7 +57,7 @@ zcash_primitives = { git = "https://github.com/adityapk00/librustzcash", rev = "
 zcash_client_backend = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481"}
 zcash_proofs = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481", features = ["multicore"]}
 zcash_encoding = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481",  package = "zcash_encoding" }
-zcash_note_encryption = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481",  package = "zcash_note_encryption" }
+zcash_note_encryption = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481",  package = "zcash_note_encryption", features = ["pre-zip-212"] }
 
 zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", branch = "ledger-v5", default-features = false, features = ["zecwallet-compat"], optional = true }
 ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", branch = "ledger-v5", default-features = false, features = ["zecwallet-compat"], optional = true }
@@ -68,7 +68,7 @@ bytemuck = { version = "1.9.1", optional = true }
 derive_more = "0.99.17"
 
 [dev-dependencies]
-portpicker = "0.1.0"
+portpicker = "0.1.1"
 tempdir = "0.3.7"
 
 [build-dependencies]

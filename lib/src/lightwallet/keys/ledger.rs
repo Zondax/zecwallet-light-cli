@@ -763,9 +763,9 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
         ovk: Option<OutgoingViewingKey>,
         to: PaymentAddress,
         value: Amount,
-        memo: Option<MemoBytes>,
+        memo: MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
-        self.inner.add_sapling_output(ovk, to, value, memo)?;
+        self.inner.add_sapling_output(ovk, to, value, Some(memo))?;
         Ok(self)
     }
 

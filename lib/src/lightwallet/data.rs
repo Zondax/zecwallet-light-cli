@@ -1,16 +1,14 @@
 use crate::compact_formats::CompactBlock;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use ff::PrimeField;
 use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+use zcash_encoding::{Optional, Vector};
 use zcash_primitives::memo::MemoBytes;
-use zcash_primitives::sapling::SaplingIvk;
 
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
-use zcash_encoding::{Optional, Vector};
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
 use zcash_primitives::{
     memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
@@ -177,7 +175,9 @@ impl WitnessCache {
 }
 
 pub struct SaplingNoteData {
-    pub(super) ivk: SaplingIvk,
+    // Technically, this should be recoverable from the account number,
+    // but we're going to refactor this in the future, so I'll write it again here.
+    pub(super) extfvk: ExtendedFullViewingKey,
 
     pub diversifier: Diversifier,
     pub note: Note,
@@ -228,7 +228,7 @@ fn write_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
 
 impl SaplingNoteData {
     fn serialized_version() -> u64 {
-        21
+        20
     }
 
     // Reading a note also needs the corresponding address to read from.
@@ -241,17 +241,7 @@ impl SaplingNoteData {
             0
         };
 
-        let ivk = if version <= 20 {
-            ExtendedFullViewingKey::read(&mut reader)?.fvk.vk.ivk()
-        } else {
-            let mut ivk_bytes = [0; 32];
-            reader.read_exact(&mut ivk_bytes)?;
-            let fr = jubjub::Fr::from_repr(ivk_bytes);
-            if !(fr.is_some().unwrap_u8() == 1u8) {
-                io::Error::new(io::ErrorKind::InvalidData, format!("invalid note ivk"));
-            }
-            SaplingIvk(fr.unwrap())
-        };
+        let extfvk = ExtendedFullViewingKey::read(&mut reader)?;
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
@@ -275,7 +265,12 @@ impl SaplingNoteData {
             (value, rseed)
         };
 
-        let maybe_note = ivk.to_payment_address(diversifier).unwrap().create_note(value, rseed);
+        let maybe_note = extfvk
+            .fvk
+            .vk
+            .to_payment_address(diversifier)
+            .unwrap()
+            .create_note(value, rseed);
 
         let note = match maybe_note {
             Some(n) => Ok(n),
@@ -365,7 +360,7 @@ impl SaplingNoteData {
         };
 
         Ok(SaplingNoteData {
-            ivk,
+            extfvk,
             diversifier,
             note,
             witnesses,
@@ -382,7 +377,7 @@ impl SaplingNoteData {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        writer.write_all(&self.ivk.to_repr())?;
+        self.extfvk.write(&mut writer)?;
 
         writer.write_all(&self.diversifier.0)?;
 
@@ -407,9 +402,9 @@ impl SaplingNoteData {
             w.write_u32::<LittleEndian>(height)
         })?;
 
-        Optional::write(&mut writer, self.memo.as_ref(), |w, m|
+        Optional::write(&mut writer, self.memo.as_ref(), |w, m| {
             w.write_all(m.encode().as_array())
-        )?;
+        })?;
 
         writer.write_u8(if self.is_change { 1 } else { 0 })?;
 
@@ -524,9 +519,7 @@ impl Utxo {
 
         Optional::write(&mut writer, self.spent, |w, txid| w.write_all(txid.as_ref()))?;
 
-        Optional::write(&mut writer, self.spent_at_height, |w, s| {
-            w.write_i32::<LittleEndian>(s)
-        })?;
+        Optional::write(&mut writer, self.spent_at_height, |w, s| w.write_i32::<LittleEndian>(s))?;
 
         Optional::write(&mut writer, self.unconfirmed_spent, |w, (txid, height)| {
             w.write_all(txid.as_ref())?;
@@ -759,14 +752,22 @@ pub struct SpendableNote {
     pub diversifier: Diversifier,
     pub note: Note,
     pub witness: IncrementalWitness<Node>,
-    /// ivk of the associated spending key
-    pub ivk: SaplingIvk,
+    pub extsk: ExtendedSpendingKey,
 }
 
 impl SpendableNote {
-    pub fn from(txid: TxId, nd: &SaplingNoteData, anchor_offset: usize, ivk: &SaplingIvk) -> Option<Self> {
+    pub fn from(
+        txid: TxId,
+        nd: &SaplingNoteData,
+        anchor_offset: usize,
+        extsk: &Option<ExtendedSpendingKey>,
+    ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
-        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() && nd.witnesses.len() >= (anchor_offset + 1) {
+        if nd.spent.is_none()
+            && nd.unconfirmed_spent.is_none()
+            && extsk.is_some()
+            && nd.witnesses.len() >= (anchor_offset + 1)
+        {
             let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
 
             witness.map(|w| SpendableNote {
@@ -775,7 +776,7 @@ impl SpendableNote {
                 diversifier: nd.diversifier,
                 note: nd.note.clone(),
                 witness: w.clone(),
-                ivk: SaplingIvk(ivk.0.clone()),
+                extsk: extsk.clone().unwrap(),
             })
         } else {
             None
@@ -799,20 +800,14 @@ pub struct WalletZecPriceInfo {
     pub historical_prices_retry_count: u64,
 }
 
-impl Default for WalletZecPriceInfo {
-    fn default() -> Self {
+impl WalletZecPriceInfo {
+    pub fn new() -> Self {
         Self {
             zec_price: None,
             currency: "USD".to_string(), // Only USD is supported right now.
             last_historical_prices_fetched_at: None,
             historical_prices_retry_count: 0,
         }
-    }
-}
-
-impl WalletZecPriceInfo {
-    pub fn new() -> Self {
-        Default::default()
     }
 
     pub fn serialized_version() -> u64 {

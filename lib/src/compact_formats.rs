@@ -1,13 +1,15 @@
 use group::GroupEncoding;
 
-use std::convert::TryInto;
 use std::convert::TryFrom;
+use std::convert::TryInto;
 
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 
+use std::convert::TryFrom;
+use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
-    consensus::{BlockHeight,Parameters},
+    consensus::{BlockHeight, Parameters},
     sapling::note_encryption::SaplingDomain,
 };
 
@@ -80,14 +82,9 @@ impl CompactSaplingOutput {
     pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
         let mut repr = [0; 32];
         repr.as_mut().copy_from_slice(&self.cmu[..]);
-        //let r = bls12_381::Scalar::from_repr(repr);
 
         let res = bls12_381::Scalar::from_bytes(&repr);
-        let r= if res.is_some().into() {
-            Some(res.unwrap())
-        } else {
-            None
-        };
+        let r = if res.is_some().into() { Some(res.unwrap()) } else { None };
 
         if bool::from(r.is_some()) {
             Ok(r.unwrap())

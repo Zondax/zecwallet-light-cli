@@ -13,22 +13,28 @@ use crate::{
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
+use std::convert::TryFrom;
+use std::sync::mpsc;
 use std::{
     cmp,
     collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, Arc, mpsc},
+    sync::{atomic::AtomicU64, mpsc, Arc},
     time::SystemTime,
 };
-use std::convert::TryFrom;
 use tokio::sync::RwLock;
 use zcash_client_backend::{
     address,
     encoding::{decode_extended_full_viewing_key, decode_extended_spending_key, encode_payment_address},
 };
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::{consensus::BlockHeight, consensus, legacy::Script, memo::Memo, transaction::components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut}, zip32::ExtendedFullViewingKey};
-use zcash_primitives::consensus::BranchId;
+use zcash_primitives::{
+    consensus::{self, BlockHeight, BranchId},
+    legacy::Script,
+    memo::{Memo, MemoBytes},
+    transaction::components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
+    zip32::ExtendedFullViewingKey,
+};
 
 use self::{
     data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
@@ -112,7 +118,6 @@ impl Default for WalletOptions {
         }
     }
 }
-
 
 impl WalletOptions {
     pub fn serialized_version() -> u64 {
@@ -574,8 +579,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         height: u64,
         num_zaddrs: u32,
     ) -> io::Result<Self> {
-        let keys =
-            InMemoryKeys::<P>::new(&config, seed_phrase, num_zaddrs).map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
+        let keys = InMemoryKeys::<P>::new(&config, seed_phrase, num_zaddrs)
+            .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys.into())),
@@ -815,8 +820,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap()
             });
 
-            if (sapling_value_selected + transparent_value_selected).unwrap() >= target_amount {
-                return (notes, utxos, (sapling_value_selected + transparent_value_selected).unwrap());
+            let amount = sapling_value_selected + transparent_value_selected;
+            let amount = amount.unwrap();
+            if amount >= target_amount {
+                return (notes, utxos, amount);
             }
         }
 
@@ -1228,11 +1235,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             (map, first)
         };
 
-        let (notes, utxos, selected_value) = self.select_notes_and_utxos(target_amount, transparent_only, true).await;
-        if selected_value < target_amount {
+        let (notes, utxos, selected_value) = self
+            .select_notes_and_utxos(target_amount.unwrap(), transparent_only, true)
+            .await;
+        if selected_value < target_amount.unwrap() {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount), self.config.anchor_offset.last().unwrap() + 1
+                u64::from(selected_value), u64::from(target_amount.unwrap()), self.config.anchor_offset.last().unwrap() + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1249,7 +1258,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         let mut keys = self.keys.write().await;
         let mut builder = keys.tx_builder(target_height);
-        builder.with_progress_notifier( Some(progress_notifier));
+        builder.with_progress_notifier(Some(progress_notifier));
 
         // Add all tinputs
         utxos
@@ -1305,12 +1314,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         for (to, value, memo) in recepients {
             // Compute memo if it exists
             let encoded_memo = match memo {
-                None => None,
+                None => MemoBytes::empty(),
                 Some(s) => {
                     // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
                     // interpret it as a hex
                     match utils::interpret_memo_string(s) {
-                        Ok(m) => Some(m),
+                        Ok(m) => m,
                         Err(e) => {
                             error!("{}", e);
                             return Err(e);
@@ -1334,7 +1343,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             }
         }
 
-        // Set up a channel to recieve updates on the progress of building the transaction
+        // Set up a channel to receieve updates on the progress of building the transaction
         let progress = self.send_progress.clone();
 
         // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
@@ -1486,6 +1495,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 mod test {
     use zcash_primitives::transaction::components::Amount;
 
+    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::{
         blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
         lightclient::{
@@ -1493,7 +1503,6 @@ mod test {
             LightClient,
         },
     };
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
 
     #[tokio::test]
     async fn z_t_note_selection() {

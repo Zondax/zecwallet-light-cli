@@ -30,7 +30,13 @@ use tokio::{
     time::sleep,
 };
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
-use zcash_primitives::{block::BlockHash, consensus::{BlockHeight, BranchId}, consensus, memo::{Memo, MemoBytes}, transaction::{components::amount::DEFAULT_FEE, Transaction, TxId}};
+use zcash_primitives::{
+    block::BlockHash,
+    consensus::{BlockHeight, BranchId, MAIN_NETWORK, TEST_NETWORK},
+    consensus,
+    memo::{Memo, MemoBytes},
+    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId}
+};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
@@ -1351,7 +1357,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let mut batch_size = 50_000;
+            let mut batch_size = 300_000;
             if prev + batch_size > 1_700_000 {
                 batch_size = 1_000;
             }
@@ -1600,18 +1606,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         result.map(|(txid, _)| txid)
     }
 
-    async fn consensus_branch_id(&self) -> u32 {
-        let height = self.wallet.last_scanned_height().await;
-
-        let branch: BranchId = BranchId::for_height(&self.config.get_params(), BlockHeight::from_u32(height as u32));
-        let branch_id: u32 = u32::from(branch);
-
-        branch_id
-    }
-
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
-        // First, get the concensus branch ID
-        let branch_id = self.consensus_branch_id().await;
         info!("Creating transaction");
 
         // println!("BranchID {:x}", branch_id);
@@ -1623,7 +1618,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             let prover = LocalTxProver::from_bytes(&sapling_spend, &sapling_output);
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |txbytes| {
+                .send_to_address(prover, false, addrs, |txbytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), txbytes)
                 })
                 .await
@@ -1634,8 +1629,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
     #[cfg(test)]
     pub async fn test_do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
-        // First, get the concensus branch ID
-        let branch_id = self.consensus_branch_id().await;
         info!("Creating transaction");
 
         let result = {
@@ -1643,7 +1636,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             let prover = crate::blaze::test_utils::FakeTxProver {};
 
             self.wallet
-                .send_to_address(branch_id, prover, false, addrs, |txbytes| {
+                .send_to_address(prover, false, addrs, |txbytes| {
                     GrpcConnector::send_transaction(self.get_server_uri(), txbytes)
                 })
                 .await
@@ -1673,3 +1666,6 @@ pub mod tests;
 
 #[cfg(test)]
 pub(crate) mod test_server;
+
+#[cfg(test)]
+pub(crate) mod faketx;

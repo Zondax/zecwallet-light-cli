@@ -25,8 +25,13 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
-
-use zcash_primitives::{consensus, consensus::BlockHeight, legacy::TransparentAddress, memo::Memo, sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery}, transaction::{Transaction, TxId}};
+use zcash_primitives::{
+    consensus::{self, BlockHeight},
+    legacy::TransparentAddress,
+    memo::Memo,
+    sapling::note_encryption::{try_sapling_note_decryption, try_sapling_output_recovery},
+    transaction::{Transaction, TxId},
+};
 
 use super::syncdata::BlazeSyncData;
 
@@ -202,16 +207,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 let prev_txid = TxId::from_bytes(*vin.prevout.hash());
                 let prev_n = vin.prevout.n() as u64;
 
-                if let Some(wtx) = current.get(&prev_txid) {
-                    // One of the tx outputs is a match
-                    if let Some(spent_utxo) = wtx
-                        .utxos
-                        .iter()
-                        .find(|u| u.txid == prev_txid && u.output_index == prev_n)
-                    {
-                        info!("Spent: utxo from {} was spent in {}", prev_txid, tx.txid());
-                        total_transparent_value_spent += spent_utxo.value;
-                        spent_utxos.push((prev_txid, prev_n as u32, tx.txid(), height));
+                    if let Some(wtx) = current.get(&prev_txid) {
+                        // One of the tx outputs is a match
+                        if let Some(spent_utxo) = wtx
+                            .utxos
+                            .iter()
+                            .find(|u| u.txid == prev_txid && u.output_index == prev_n)
+                        {
+                            info!("Spent: utxo from {} was spent in {}", prev_txid, tx.txid());
+                            total_transparent_value_spent += spent_utxo.value;
+                            spent_utxos.push((prev_txid, prev_n as u32, tx.txid(), height));
+                        }
                     }
                 }
             }

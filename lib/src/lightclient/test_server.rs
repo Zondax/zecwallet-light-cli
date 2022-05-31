@@ -23,8 +23,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use zcash_primitives::block::BlockHash;
-use zcash_primitives::consensus;
-use zcash_primitives::consensus::{BlockHeight, BranchId};
+use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
@@ -308,6 +307,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         )
             .unwrap()
             .txid();
+
         self.data.write().await.sent_txns.push(rtx);
         Ok(Response::new(SendResponse {
             error_message: txid.to_string(),
