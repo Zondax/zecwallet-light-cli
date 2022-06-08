@@ -29,10 +29,12 @@ use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
 use crate::lightclient::lightclient_config::UnitTestNetwork;
 
-use super::lightclient_config::LightClientConfig;
+use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;
 
-pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static>(params: P) -> (
+pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static>(
+    params: P,
+) -> (
     Arc<RwLock<TestServerData<P>>>,
     LightClientConfig<P>,
     oneshot::Receiver<bool>,
@@ -108,6 +110,7 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
     lc: &LightClient<P>,
 ) {
     let cbs = fcbl.into_compact_blocks();
+    println!("mining pending block {}", cbs[0].vtx[0].outputs.len());
 
     data.write().await.add_blocks(cbs.clone());
     let mut v = fcbl.into_txns();
@@ -144,7 +147,7 @@ pub struct TestServerData<P> {
     pub tree_states: Vec<(u64, String, String)>,
 }
 
-impl <P: consensus::Parameters>  TestServerData<P> {
+impl<P: consensus::Parameters> TestServerData<P> {
     pub fn new(config: LightClientConfig<P>) -> Self {
         let data = Self {
             blocks: vec![],
@@ -200,6 +203,7 @@ impl <P: consensus::Parameters>  TestServerData<P> {
     }
 }
 
+#[derive(Debug)]
 pub struct TestGRPCService<P> {
     data: Arc<RwLock<TestServerData<P>>>,
 }

@@ -23,7 +23,7 @@ use tokio::{
     time::sleep,
 };
 use zcash_primitives::{
-    consensus::BlockHeight,
+    consensus::{self, BlockHeight},
     merkle_tree::{CommitmentTree, IncrementalWitness},
     sapling::{Node, Nullifier},
     transaction::TxId,
@@ -55,7 +55,7 @@ pub struct BlockAndWitnessData {
 }
 
 impl BlockAndWitnessData {
-    pub fn new(config: &LightClientConfig, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
+    pub fn new<P: consensus::Parameters>(config: &LightClientConfig<P>, sync_status: Arc<RwLock<SyncStatus>>) -> Self {
         Self {
             blocks: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
@@ -68,7 +68,7 @@ impl BlockAndWitnessData {
     }
 
     #[cfg(test)]
-    pub fn new_with_batchsize(config: &LightClientConfig, batch_size: u64) -> Self {
+    pub fn new_with_batchsize<P: consensus::Parameters>(config: &LightClientConfig<P>, batch_size: u64) -> Self {
         let mut s = Self::new(config, Arc::new(RwLock::new(SyncStatus::default())));
         s.batch_size = batch_size;
 
@@ -587,6 +587,7 @@ mod test {
     use std::sync::Arc;
 
     use crate::blaze::sync_status::SyncStatus;
+    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::lightwallet::wallet_txns::WalletTxns;
     use crate::{
         blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
@@ -605,7 +606,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_simple() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected("main".to_string(), None),
+            &LightClientConfig::create_unconnected(UnitTestNetwork, None),
             25_000,
         );
 
@@ -622,7 +623,7 @@ mod test {
     #[tokio::test]
     async fn setup_finish_large() {
         let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected("main".to_string(), None),
+            &LightClientConfig::create_unconnected(UnitTestNetwork, None),
             25_000,
         );
 
@@ -640,7 +641,7 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
+        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let blocks = FakeCompactBlockList::new(200).into_blockdatas();
@@ -690,7 +691,7 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
+        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
@@ -747,7 +748,7 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let mut config = LightClientConfig::create_unconnected("main".to_string(), None);
+        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();

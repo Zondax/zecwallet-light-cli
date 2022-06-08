@@ -150,7 +150,7 @@ mod test {
     use crate::compact_formats::RawTransaction;
     use crate::lightclient::faketx;
     use crate::lightclient::lightclient_config::UnitTestNetwork;
-    use zcash_primitives::transaction::{Transaction, TransactionData};
+    use zcash_primitives::transaction::Transaction;
 
     use crate::lightwallet::keys::InMemoryKeys;
     use crate::lightwallet::wallettkey::WalletTKey;

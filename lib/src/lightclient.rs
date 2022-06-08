@@ -32,8 +32,7 @@ use tokio::{
 use zcash_client_backend::encoding::{decode_payment_address, encode_payment_address};
 use zcash_primitives::{
     block::BlockHash,
-    consensus::{BlockHeight, BranchId, MAIN_NETWORK, TEST_NETWORK},
-    consensus,
+    consensus::{self, BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId}
 };
@@ -180,13 +179,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         match self.config.get_zcash_params_path() {
             Ok(zcash_params_dir) => {
                 // Create the sapling output and spend params files
-                match LightClient::<P>::write_file_if_not_exists(&zcash_params_dir, "sapling-output.params", &sapling_output)
-                {
+                match LightClient::<P>::write_file_if_not_exists(
+                    &zcash_params_dir,
+                    "sapling-output.params",
+                    &sapling_output,
+                ) {
                     Ok(_) => {}
                     Err(e) => return Err(format!("Warning: Couldn't write the output params!\n{}", e)),
                 };
 
-                match LightClient::<P>::write_file_if_not_exists(&zcash_params_dir, "sapling-spend.params", &sapling_spend) {
+                match LightClient::<P>::write_file_if_not_exists(
+                    &zcash_params_dir,
+                    "sapling-spend.params",
+                    &sapling_spend,
+                ) {
                     Ok(_) => {}
                     Err(e) => return Err(format!("Warning: Couldn't write the spend params!\n{}", e)),
                 }
@@ -1232,7 +1238,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                             let price = price.read().await.clone();
                             //info!("Mempool attempting to scan {}", tx.txid());
 
-                            FetchFullTxns::scan_full_tx(
+                            FetchFullTxns::<P>::scan_full_tx(
                                 config.clone(),
                                 tx,
                                 BlockHeight::from_u32(rtx.height as u32),
@@ -1494,7 +1500,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         // 1. Fetch the transparent txns only after reorgs are done.
         let taddr_txns_handle = FetchTaddrTxns::new(self.wallet.keys_clone())
-            .start(start_block, earliest_block, taddr_fetcher_tx, fetch_taddr_txns_tx,params)
+            .start(
+                start_block,
+                earliest_block,
+                taddr_fetcher_tx,
+                fetch_taddr_txns_tx,
+                params,
+            )
             .await;
 
         // 2. Notify the notes updater that the blocks are done updating

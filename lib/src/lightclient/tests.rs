@@ -40,7 +40,7 @@ use crate::lightwallet::data::WalletTx;
 use super::lightclient_config::UnitTestNetwork;
 
 use super::checkpoints;
-use super::lightclient_config::LightClientConfig;
+use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -195,6 +195,8 @@ async fn z_incoming_z_outgoing() {
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     assert_eq!(lc.wallet.last_scanned_height().await, 11);
+
+    println!("{}", lc.do_list_notes(true).await.pretty(2));
 
     // 3. Check the balance is correct, and we recieved the incoming tx from outside
     let b = lc.do_balance().await;
@@ -778,6 +780,7 @@ async fn t_incoming_t_outgoing() {
     // 5. Test the unconfirmed send.
     let list = lc.do_list_transactions(false).await;
     println!("{}", list.pretty(2));
+    println!("{}", lc.do_list_notes(true).await.pretty(2));
     assert_eq!(list[1]["block_height"].as_u64().unwrap(), 12);
     assert_eq!(list[1]["txid"], sent_txid);
     assert_eq!(

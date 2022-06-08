@@ -13,11 +13,14 @@ use tokio::{
     task::JoinHandle,
 };
 
-use zcash_primitives::{consensus::BlockHeight,
-                       sapling::note_encryption::try_sapling_compact_note_decryption,
-                       sapling::{self, Nullifier, SaplingIvk},
-                       transaction::{Transaction, TxId},
-                       consensus};
+use zcash_primitives::{
+    consensus::{self, BlockHeight},
+    sapling::{
+        self, Nullifier, SaplingIvk,
+        note_encryption::try_sapling_compact_note_decryption
+    },
+    transaction::{Transaction, TxId}
+};
 
 use super::syncdata::BlazeSyncData;
 

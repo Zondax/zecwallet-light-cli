@@ -33,7 +33,6 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
     5
 };
 
-
 // Marker struct for the production network.
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub struct UnitTestNetwork;
@@ -108,8 +107,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         use std::net::ToSocketAddrs;
 
         let s = server.clone();
-        if let Ok((chain_name, sapling_activation_height, block_height)) =
-            Runtime::new().unwrap().block_on(async move {
+        let getinfo = Runtime::new().unwrap().block_on(async move {
                 // Test for a connection first
                 format!("{}:{}", server.host().unwrap(), server.port().unwrap())
                     .to_socket_addrs()?
@@ -125,7 +123,9 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                     .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
 
                 Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
-            })
+            });
+
+        if let Ok((chain_name, sapling_activation_height, block_height)) = getinfo
         {
             let config = LightClientConfig {
                 server: s,
@@ -356,8 +356,8 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match &self.chain_name[..] {
             "zs" | "main" => [0x80],
-            "ztestsapling" => [0xEF],
-            "zregtestsapling" => [0xEF],
+            "ztestsapling" | "test" => [0xEF],
+            "zregtestsapling" | "regtest" => [0xEF],
             c => panic!("Unknown chain {}", c),
         }
     }

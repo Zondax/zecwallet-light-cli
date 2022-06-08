@@ -1,8 +1,8 @@
 pub fn get_closest_checkpoint(chain_name: &str, height: u64) -> Option<(u64, &'static str, &'static str)> {
     log::info!("Trying to get checkpoint closest to block {}", height);
     match chain_name {
-        "test" => get_test_checkpoint(height),
-        "main" => get_main_checkpoint(height),
+        "ztestsapling" => get_test_checkpoint(height),
+        "zs" => get_main_checkpoint(height),
         _ => None,
     }
 }

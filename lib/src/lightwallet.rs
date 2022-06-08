@@ -1438,7 +1438,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         {
             let price = self.price.read().await.clone();
 
-            FetchFullTxns::scan_full_tx(
+            FetchFullTxns::<P>::scan_full_tx(
                 self.config.clone(),
                 tx,
                 target_height.into(),
@@ -1499,6 +1499,7 @@ mod test {
     use crate::{
         blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
         lightclient::{
+            lightclient_config::UnitTestNetwork,
             test_server::{create_test_server, mine_pending_blocks, mine_random_blocks},
             LightClient,
         },

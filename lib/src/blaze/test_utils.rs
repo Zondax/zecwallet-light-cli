@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 
-use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption, ShieldedOutput};
+use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{self, BlockHeight, BranchId, TEST_NETWORK},
@@ -38,7 +38,7 @@ use zcash_primitives::{
     },
     sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
     transaction::{
-        components::{transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        components::{sapling, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Authorized, Transaction, TransactionData, TxId,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
@@ -151,11 +151,11 @@ impl FakeTransaction {
         let mut sapling_bundle = if self.td.sapling_bundle().is_some() {
             self.td.sapling_bundle().unwrap().clone()
         } else {
-            transaction::components::sapling::Bundle {
+            sapling::Bundle {
                 shielded_spends: vec![],
                 shielded_outputs: vec![],
                 value_balance: Amount::zero(),
-                authorization: transaction::components::sapling::Authorized {
+                authorization: sapling::Authorized {
                     binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature error"),
                 },
             }
@@ -370,7 +370,8 @@ impl FakeCompactBlockList {
     pub async fn add_pending_sends<P: consensus::Parameters + Send + Sync + 'static>(
         &mut self,
         data: &Arc<RwLock<TestServerData<P>>>,
-    ) {        let sent_txns = data.write().await.sent_txns.split_off(0);
+    ) {
+        let sent_txns = data.write().await.sent_txns.split_off(0);
 
         for rtx in sent_txns {
             let tx = Transaction::read(
