@@ -142,14 +142,13 @@ mod test {
     use tokio::sync::mpsc::UnboundedReceiver;
     use tokio::task::JoinError;
 
-    use tokio::sync::oneshot::{self};
-    use tokio::sync::RwLock;
-    use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
-
-    use zcash_primitives::consensus::BlockHeight;
     use crate::compact_formats::RawTransaction;
     use crate::lightclient::faketx;
     use crate::lightclient::lightclient_config::UnitTestNetwork;
+    use tokio::sync::oneshot;
+    use tokio::sync::RwLock;
+    use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
+    use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::Transaction;
 
     use crate::lightwallet::keys::InMemoryKeys;

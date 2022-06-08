@@ -164,9 +164,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         // and avoid duplicates (shouldn't be any anyways)
         let taddrs_set = keys.read().await.get_all_taddrs().await.collect::<HashSet<_>>();
 
-        println!("Scan Full TX");
-
-        // Step 1: Scan all transparent outputs to see if we received any money
+        // Step 1: Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = tx.transparent_bundle() {
             for (n, vout) in t_bundle.vout.iter().enumerate() {
                 match vout.script_pubkey.address() {
@@ -174,7 +172,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                         let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
-                            println!("sft: Recieved t funds {}", i64::from(vout.value));
                             wallet_txns.write().await.add_new_taddr_output(
                                 tx.txid(),
                                 output_taddr.clone(),
@@ -218,7 +215,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                             .find(|u| u.txid == prev_txid && u.output_index == prev_n)
                         {
                             info!("Spent: utxo from {} was spent in {}", prev_txid, tx.txid());
-                            println!("sft: T address spent {}", spent_utxo.value);
                             total_transparent_value_spent += spent_utxo.value;
                             spent_utxos.push((prev_txid, prev_n as u32, tx.txid(), height));
                         }
@@ -258,7 +254,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             if let Some(s_bundle) = tx.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
                     if let Some((nf, value, txid)) = unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier) {
-                        println!("sft: nullifier spent: {}", value);
                         wallet_txns.write().await.add_new_spent(
                             tx.txid(),
                             height,
@@ -307,7 +302,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                         };
 
                     // info!("A sapling note was received into the wallet in {}", tx.txid());
-                    println!("sft: Sapling note recieved {}", note.value);
                     if unconfirmed {
                         wallet_txns.write().await.add_pending_note(
                             tx.txid(),
@@ -337,8 +331,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                                 is_outgoing_tx = true;
 
                                 let address = encode_payment_address(config.hrp_sapling_address(), &payment_address);
-
-                                println!("sft: Is outgoing TX");
 
                                 // Check if this is change, and if it also doesn't have a memo, don't add
                                 // to the outgoing metadata.
