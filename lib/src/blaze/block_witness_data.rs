@@ -60,7 +60,7 @@ impl BlockAndWitnessData {
             blocks: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             verification_list: Arc::new(RwLock::new(vec![])),
-            batch_size: 25_000,
+            batch_size: 5_000,
             verified_tree: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height,
@@ -444,7 +444,7 @@ impl BlockAndWitnessData {
             } else {
                 let tree_state = GrpcConnector::get_sapling_tree(uri, prev_height).await?;
                 let sapling_tree = hex::decode(&tree_state.tree).unwrap();
-                self.verification_list.write().await.push(tree_state);
+                // self.verification_list.write().await.push(tree_state);
                 CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
             };
 
