@@ -60,7 +60,7 @@ impl BlockAndWitnessData {
             blocks: Arc::new(RwLock::new(vec![])),
             existing_blocks: Arc::new(RwLock::new(vec![])),
             verification_list: Arc::new(RwLock::new(vec![])),
-            batch_size: 5_000,
+            batch_size: 1_000,
             verified_tree: None,
             sync_status,
             sapling_activation_height: config.sapling_activation_height,
@@ -306,8 +306,10 @@ impl BlockAndWitnessData {
             let mut last_block_expecting = end_block;
 
             while let Some(cb) = rx.recv().await {
-                // We'll process 25_000 blocks at a time.
+                // We'll process batch_size (1_000) blocks at a time.
+                // println!("Recieved block # {}", cb.height);
                 if cb.height % batch_size == 0 {
+                    // println!("Batch size hit at height {} with len {}", cb.height, blks.len());
                     if !blks.is_empty() {
                         // Add these blocks to the list
                         sync_status.write().await.blocks_done += blks.len() as u64;
@@ -345,6 +347,11 @@ impl BlockAndWitnessData {
                 blks.push(BlockData::new(cb));
             }
 
+            // println!(
+            //     "Final block size at earliest-height {} with len {}",
+            //     earliest_block_height,
+            //     blks.len()
+            // );
             if !blks.is_empty() {
                 // We'll now dispatch these blocks for updating the witness
                 sync_status.write().await.blocks_done += blks.len() as u64;
