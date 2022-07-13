@@ -23,7 +23,7 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
         spam_filter_threshold: i64,
     ) -> Result<(), String> {
         let grpc_client = Arc::new(GrpcConnector::new(self.config.server.clone()));
-        const STEP: u64 = 10_000;
+        const STEP: u64 = 1_000;
 
         // We need the `rev()` here because rust ranges can only go up
         for b in (end_block..(start_block + 1)).rev().step_by(STEP as usize) {
