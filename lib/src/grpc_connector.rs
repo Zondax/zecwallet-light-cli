@@ -1,6 +1,7 @@
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
@@ -14,7 +15,12 @@ use log::warn;
 use tokio::sync::mpsc::{unbounded_channel, Sender, UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tokio_rustls::rustls::ClientConfig;
+use tokio::time::timeout;
+
+use tokio_rustls::{
+    rustls::ClientConfig,
+    rustls::{OwnedTrustAnchor, RootCertStore},
+};
 use tonic::transport::ClientTlsConfig;
 use tonic::{
     transport::{Channel, Error},
@@ -40,18 +46,25 @@ impl GrpcConnector {
             Channel::builder(self.uri.clone()).connect().await?
         } else {
             //println!("https");
-            let mut config = ClientConfig::new();
+            let mut root_store = RootCertStore::empty();
+            root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
+            }));
+            let mut config = ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
 
             config.alpn_protocols.push(b"h2".to_vec());
-            config
-                .root_store
-                .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
 
-            let tls = ClientTlsConfig::new()
-                .rustls_client_config(config)
-                .domain_name(self.uri.host().unwrap());
+            let tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
 
-            Channel::builder(self.uri.clone()).tls_config(tls)?.connect().await?
+            Channel::builder(self.uri.clone())
+                .tls_config(tls)?
+                // .timeout(Duration::from_secs(10))
+                // .connect_timeout(Duration::from_secs(10))
+                .connect()
+                .await?
         };
 
         Ok(CompactTxStreamerClient::new(channel))
@@ -199,10 +212,13 @@ impl GrpcConnector {
         // First download all blocks and save them locally, so we don't timeout
         let mut block_cache = Vec::new();
 
-        while let Some(block) = response.message().await.map_err(|e| {
-            // println!("first error");
-            format!("{}", e)
-        })? {
+        while let Some(block) = response.message()
+            .await
+            .map_err(|e| {
+                // println!("first error");
+                format!("{}", e)
+            })?
+        {
             block_cache.push(block);
         }
 
@@ -274,7 +290,8 @@ impl GrpcConnector {
             range: Some(BlockRange {
                 start,
                 end ,
-                spam_filter_threshold: 0,}),
+                spam_filter_threshold: 0
+            }),
         };
         let request = Request::new(args.clone());
 

@@ -15,6 +15,7 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
     pub fn new(config: &LightClientConfig<P>) -> Self {
         Self { config: config.clone() }
     }
+
     async fn fetch_blocks_range(
         &self,
         receivers: &[Sender<CompactBlock>; 2],

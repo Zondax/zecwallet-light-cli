@@ -130,7 +130,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             let config = LightClientConfig {
                 server: s,
                 chain_name,
-                monitor_mempool: true,
+                monitor_mempool: false,
                 sapling_activation_height,
                 anchor_offset: ANCHOR_OFFSET,
                 data_dir: None,

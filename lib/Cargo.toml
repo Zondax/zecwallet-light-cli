@@ -20,17 +20,18 @@ bytes = "0.4"
 log4rs = "1.0.0"
 rand = "0.8.5"
 http = "0.2.4"
-tonic = {version = "0.4.3", features = ["tls", "tls-roots"]}
-prost = "0.7.0"
-tokio =  { version = "1.8.4", features = ["full"] }
-tokio-stream = "0.1.6"
-tokio-rustls = "0.22.0"
+tonic = {version = "0.7.2", features = ["tls", "tls-roots"]}
+prost = "0.10.4"
+tokio =  { version = "1.20.0", features = ["full"] }
+tokio-stream = "0.1.9"
+tokio-rustls = "0.23.4"
 futures = "0.3.21"
 log = "0.4.14"
 hex = "0.3"
 ring = "0.16.20"
 dirs = "3.0.2"
 json = "0.12.4"
+rayon = "1.5.3"
 webpki-roots = "0.21.0"
 async-trait = "0.1.53"
 
@@ -72,4 +73,4 @@ portpicker = "0.1.1"
 tempdir = "0.3.7"
 
 [build-dependencies]
-tonic-build = "0.4.2"
+tonic-build = "0.7.2"

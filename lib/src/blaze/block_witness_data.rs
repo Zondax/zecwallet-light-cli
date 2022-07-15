@@ -11,12 +11,12 @@ use crate::{
     },
 };
 
-use futures::future::join_all;
+use futures::{stream::FuturesOrdered, StreamExt};
 use http::Uri;
 use std::{sync::Arc, time::Duration};
 use tokio::{
     sync::{
-        mpsc::{self, UnboundedSender},
+        mpsc::{self, Sender, UnboundedSender},
         RwLock,
     },
     task::{yield_now, JoinHandle},
@@ -197,7 +197,7 @@ impl BlockAndWitnessData {
 
         // Verify each tree pair
         let blocks = self.blocks.clone();
-        let handles: Vec<JoinHandle<bool>> = tree_pairs
+        let mut handles = tree_pairs
             .into_iter()
             .map(|(vt, ct)| {
                 let blocks = blocks.clone();
@@ -239,17 +239,12 @@ impl BlockAndWitnessData {
                     hex::encode(buf) == vt.tree
                 })
             })
-            .collect();
+            .collect::<FuturesOrdered<_>>();
 
-        let results = join_all(handles).await.into_iter().collect::<Result<Vec<_>, _>>();
-        // If errored out, return false
-        if results.is_err() {
-            return (false, None);
-        }
-
-        // If any one was false, return false
-        if results.unwrap().into_iter().find(|r| *r == false).is_some() {
-            return (false, None);
+        while let Some(r) = handles.next().await {
+            if r.is_err() {
+                return (false, None);
+            }
         }
 
         return (true, heighest_tree);
@@ -278,12 +273,12 @@ impl BlockAndWitnessData {
         end_block: u64,
         wallet_txns: Arc<RwLock<WalletTxns>>,
         reorg_tx: UnboundedSender<Option<u64>>,
-    ) -> (JoinHandle<Result<u64, String>>, UnboundedSender<CompactBlock>) {
+    ) -> (JoinHandle<Result<u64, String>>, Sender<CompactBlock>) {
         //info!("Starting node and witness sync");
         let batch_size = self.batch_size;
 
         // Create a new channel where we'll receive the blocks
-        let (tx, mut rx) = mpsc::unbounded_channel::<CompactBlock>();
+        let (tx, mut rx) = mpsc::channel::<CompactBlock>(64); // Only 64 blocks in the buffer
 
         let blocks = self.blocks.clone();
         let existing_blocks = self.existing_blocks.clone();
@@ -306,6 +301,7 @@ impl BlockAndWitnessData {
             let mut last_block_expecting = end_block;
 
             while let Some(cb) = rx.recv().await {
+                //println!("block_witness recieved {:?}", cb.height);
                 // We'll process batch_size (1_000) blocks at a time.
                 // println!("Recieved block # {}", cb.height);
                 if cb.height % batch_size == 0 {
@@ -601,7 +597,7 @@ mod test {
         lightclient::lightclient_config::LightClientConfig,
         lightwallet::data::BlockData,
     };
-    use futures::future::join_all;
+    use futures::future::try_join_all;
     use rand::rngs::OsRng;
     use rand::RngCore;
     use tokio::sync::RwLock;
@@ -678,6 +674,7 @@ mod test {
             for block in blocks {
                 cb_sender
                     .send(block.cb())
+                    .await
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
@@ -688,12 +685,7 @@ mod test {
 
         assert_eq!(h.await.unwrap().unwrap(), end_block);
 
-        join_all(vec![send_h])
-            .await
-            .into_iter()
-            .collect::<Result<Result<(), String>, _>>()
-            .unwrap()
-            .unwrap();
+        try_join_all(vec![send_h]).await.unwrap();
     }
 
     #[tokio::test]
@@ -730,6 +722,7 @@ mod test {
             for block in blocks {
                 cb_sender
                     .send(block.cb())
+                    .await
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
@@ -740,12 +733,7 @@ mod test {
 
         assert_eq!(h.await.unwrap().unwrap(), end_block);
 
-        join_all(vec![send_h])
-            .await
-            .into_iter()
-            .collect::<Result<Result<(), String>, _>>()
-            .unwrap()
-            .unwrap();
+        try_join_all(vec![send_h]).await.unwrap();
 
         let finished_blks = nw.finish_get_blocks(100).await;
         assert_eq!(finished_blks.len(), 100);
@@ -828,6 +816,7 @@ mod test {
             for block in blocks {
                 cb_sender
                     .send(block.cb())
+                    .await
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
 
@@ -843,6 +832,7 @@ mod test {
 
                 cb_sender
                     .send(reorged_blocks.drain(0..1).next().unwrap().cb())
+                    .await
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
 
@@ -854,12 +844,7 @@ mod test {
 
         assert_eq!(h.await.unwrap().unwrap(), end_block - num_reorged as u64);
 
-        join_all(vec![send_h])
-            .await
-            .into_iter()
-            .collect::<Result<Result<(), String>, _>>()
-            .unwrap()
-            .unwrap();
+        try_join_all(vec![send_h]).await.unwrap();
 
         let finished_blks = nw.finish_get_blocks(100).await;
         assert_eq!(finished_blks.len(), 100);

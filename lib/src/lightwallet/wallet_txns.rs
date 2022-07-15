@@ -4,7 +4,7 @@ use std::{
 };
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use log::error;
+use log::{error, info};
 use zcash_encoding::Vector;
 use zcash_primitives::{
     consensus::BlockHeight,
@@ -291,7 +291,7 @@ impl WalletTxns {
 
         txids_to_remove
             .iter()
-            .for_each(|t| println!("Removing expired mempool tx {}", t));
+            .for_each(|t| info!("Removing expired mempool tx {}", t));
 
         self.remove_txids(txids_to_remove);
     }

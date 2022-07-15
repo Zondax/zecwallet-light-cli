@@ -375,7 +375,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             let wallet = LightWallet::read(&mut reader, config).await?;
 
             let lc = LightClient {
-                wallet: wallet,
+                wallet,
                 config: config.clone(),
                 mempool_monitor: std::sync::RwLock::new(None),
                 sync_lock: Mutex::new(()),
@@ -1328,7 +1328,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         let _lock = self.sync_lock.lock().await;
-
+    
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
@@ -1365,7 +1365,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let mut latest_block_batches = vec![];
         let mut prev = last_scanned_height;
         while latest_block_batches.is_empty() || prev != latest_blockid.height {
-            let mut batch_size = 300_000;
+            let mut batch_size = 50_000;
             if prev + batch_size > 1_700_000 {
                 batch_size = 1_000;
             }
@@ -1374,6 +1374,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             prev = batch;
             latest_block_batches.push(batch);
         }
+
+        // println!("Batches are {:?}", latest_block_batches);
 
         // Increment the sync ID so the caller can determine when it is over
         {
@@ -1385,12 +1387,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
             l2.start_new(latest_block_batches.len());
         }
+        // println!("Started new sync");
 
         let mut res = Err("No batches were run!".to_string());
         for (batch_num, batch_latest_block) in latest_block_batches.into_iter().enumerate() {
+            // println!("Starting batch {}", batch_num);
             res = self.start_sync_batch(batch_latest_block, batch_num).await;
-
-            self.do_save(false).await?;
             if res.is_err() {
                 info!("Sync failed, not saving: {:?}", res.as_ref().err());
                 return res;
@@ -1408,7 +1410,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let uri = self.config.server.clone();
 
         // The top of the wallet
+        // println!("Trying to get last scanned height");
         let last_scanned_height = self.wallet.last_scanned_height().await;
+        // println!("Got last scanned height : {}", last_scanned_height);
 
         info!(
             "Latest block is {}, wallet block is {}",
@@ -1460,14 +1464,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         // Full Tx GRPC fetcher
         let params = self.config.get_params();
-        let (_, fulltx_fetcher_tx) = grpc_connector.start_fulltx_fetcher(params).await;
+        let (fulltx_fetcher_handle, fulltx_fetcher_tx) = grpc_connector.start_fulltx_fetcher(params).await;
 
         // Transparent Transactions Fetcher
         let (taddr_fetcher_handle, taddr_fetcher_tx) = grpc_connector.start_taddr_txn_fetcher().await;
 
         // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
         let fetch_full_tx_processor = FetchFullTxns::new(&self.config, self.wallet.keys_clone(), self.wallet.txns());
-        let (_, fetch_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
+        let (fetch_full_txns_handle, fetch_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
             .start(fulltx_fetcher_tx.clone(), bsync_data.clone())
             .await;
 
@@ -1521,15 +1525,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let verify_handle = tokio::spawn(async move { block_data.read().await.block_data.verify_sapling_tree().await });
 
         // Collect all the handles in a Unordered Future, so if any of them fails, we immediately know.
-        let mut tasks1 = FuturesUnordered::new();
-        tasks1.push(trial_decrypts_handle);
-        tasks1.push(fetch_compact_blocks_handle);
-        tasks1.push(taddr_fetcher_handle);
-        tasks1.push(update_notes_handle);
-        tasks1.push(taddr_txns_handle);
+        let mut tasks = FuturesUnordered::new();
+        tasks.push(trial_decrypts_handle);
+        tasks.push(fulltx_fetcher_handle);
+        tasks.push(fetch_compact_blocks_handle);
+        tasks.push(taddr_fetcher_handle);
+
+        tasks.push(update_notes_handle);
+        tasks.push(taddr_txns_handle);
+        tasks.push(fetch_full_txns_handle);
 
         // Wait for everything to finish
-        while let Some(r) = tasks1.next().await {
+        while let Some(r) = tasks.next().await {
             match r {
                 Ok(Ok(_)) => (),
                 Ok(Err(s)) => return Err(s),

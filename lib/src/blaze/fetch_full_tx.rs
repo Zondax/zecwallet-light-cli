@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-use futures::{future::join_all, stream::FuturesUnordered, StreamExt};
+use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
 use std::{
     collections::HashSet,
@@ -139,11 +139,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         });
 
         let h = tokio::spawn(async move {
-            join_all(vec![h1, h2])
-                .await
-                .into_iter()
-                .map(|r| r.map_err(|e| format!("{}", e))?)
-                .collect::<Result<(), String>>()
+            let mut f = FuturesUnordered::new();
+            f.push(h1);
+            f.push(h2);
+
+            while let Some(r) = f.next().await {
+                match r {
+                    Ok(Ok(_)) => (),
+                    Ok(Err(s)) => return Err(s),
+                    Err(e) => return Err(e.to_string()),
+                };
+            }
+
+            Ok(())
         });
 
         return (h, txid_tx, tx_tx);

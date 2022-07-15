@@ -4,10 +4,12 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
+use rayon::prelude::*;
 use std::sync::Arc;
 use tokio::{
+    runtime::Handle,
     sync::{
-        mpsc::{unbounded_channel, UnboundedSender},
+        mpsc::{channel, Sender, UnboundedSender},
         oneshot, RwLock,
     },
     task::JoinHandle,
@@ -34,13 +36,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
-    ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
+    ) -> (JoinHandle<Result<(), String>>, Sender<CompactBlock>) {
         //info!("Starting trial decrptions processor");
 
-        // Create a new channel where we'll receive the blocks
-        let (tx, mut rx) = unbounded_channel::<CompactBlock>();
+        // Create a new channel where we'll receive the blocks. only 64 in the queue
+        let (tx, mut rx) = channel::<CompactBlock>(64);
 
         let keys = self.keys.clone();
         let wallet_txns = self.wallet_txns.clone();
@@ -59,9 +61,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             );
 
             while let Some(cb) = rx.recv().await {
+                //println!("trial_witness recieved {:?}", cb.height);
                 cbs.push(cb);
 
-                if cbs.len() >= 100 {
+                if cbs.len() >= 50 {
                     let keys = keys.clone();
                     let ivks = ivks.clone();
                     let wallet_txns = wallet_txns.clone();
@@ -77,6 +80,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                         detected_txid_sender,
                         fulltx_fetcher.clone(),
                     )));
+
                 }
             }
 
@@ -91,10 +95,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             )));
 
             while let Some(r) = workers.next().await {
-                r.unwrap().unwrap();
+                match r {
+                    Ok(Ok(_)) => (),
+                    Ok(Err(s)) => return Err(s),
+                    Err(e) => return Err(e.to_string()),
+                };
             }
 
             //info!("Finished final trial decryptions");
+            Ok(())
         });
 
         return (h, tx);
@@ -106,9 +115,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         ivks: Arc<Vec<SaplingIvk>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
-        detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
+        
+        // println!("Starting batch at {}", temp_start);
         let config = keys.read().await.config().clone();
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
@@ -119,65 +130,75 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             let height = BlockHeight::from_u32(cb.height as u32);
 
             for (tx_num, ctx) in cb.vtx.iter().enumerate() {
-                let mut wallet_tx = false;
+                let tokio_handle = Handle::current();
 
-                for (output_num, co) in ctx.outputs.iter().enumerate() {
-                    for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) =
-                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
-                        {
-                            wallet_tx = true;
+                let wallet_tx = ctx
+                    .outputs
+                    // .par_iter()
+                    .iter()
+                    .enumerate()
+                    .map(|(output_num, co)| {
+                        let mut wallet_tx = false;
+                        for (i, ivk) in ivks.iter().enumerate() {
+                            if let Some((note, to)) =
+                                try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                            {
+                                wallet_tx = true;
 
-                            let keys = keys.clone();
-                            let bsync_data = bsync_data.clone();
-                            let wallet_txns = wallet_txns.clone();
-                            let detected_txid_sender = detected_txid_sender.clone();
-                            let timestamp = cb.time as u64;
-                            let ctx = ctx.clone();
+                                let keys = keys.clone();
+                                let bsync_data = bsync_data.clone();
+                                let wallet_txns = wallet_txns.clone();
+                                let detected_txid_sender = detected_txid_sender.clone();
+                                let timestamp = cb.time as u64;
+                                let ctx = ctx.clone();
 
-                            workers.push(tokio::spawn(async move {
-                                let keys = keys.read().await;
-                                let extfvk = keys.zkeys[i].extfvk();
-                                let have_spending_key = keys.have_spending_key(extfvk);
-                                let uri = bsync_data.read().await.uri().clone();
+                                workers.push(tokio_handle.spawn(async move {
+                                    let keys = keys.read().await;
+                                    let extfvk = keys.zkeys[i].extfvk();
+                                    let have_spending_key = keys.have_spending_key(extfvk);
+                                    let uri = bsync_data.read().await.uri().clone();
 
-                                // Get the witness for the note
-                                let witness = bsync_data
-                                    .read()
-                                    .await
-                                    .block_data
-                                    .get_note_witness(uri, height, tx_num, output_num)
-                                    .await?;
+                                    // Get the witness for the note
+                                    let witness = bsync_data
+                                        .read()
+                                        .await
+                                        .block_data
+                                        .get_note_witness(uri, height, tx_num, output_num)
+                                        .await?;
 
-                                let txid = WalletTx::new_txid(&ctx.hash);
-                                let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+                                    let txid = WalletTx::new_txid(&ctx.hash);
+                                    let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
 
-                                wallet_txns.write().await.add_new_note(
-                                    txid.clone(),
-                                    height,
-                                    false,
-                                    timestamp,
-                                    note,
-                                    to,
-                                    &extfvk,
-                                    have_spending_key,
-                                    witness,
-                                );
+                                    wallet_txns.write().await.add_new_note(
+                                        txid.clone(),
+                                        height,
+                                        false,
+                                        timestamp,
+                                        note,
+                                        to,
+                                        &extfvk,
+                                        have_spending_key,
+                                        witness,
+                                    );
 
-                                info!("Trial decrypt Detected txid {}", &txid);
+                                    info!("Trial decrypt Detected txid {}", &txid);
 
-                                detected_txid_sender
-                                    .send((txid, nullifier, height, Some(output_num as u32)))
-                                    .unwrap();
+                                    detected_txid_sender
+                                        .send((txid, nullifier, height, Some(output_num as u32)))
+                                        .await
+                                        .unwrap();
 
-                                Ok::<_, String>(())
-                            }));
+                                    Ok::<_, String>(())
+                                }));
 
-                            // No need to try the other ivks if we found one
-                            break;
+                                // No need to try the other ivks if we found one
+                                break;
+                            }
                         }
-                    }
-                }
+
+                        wallet_tx
+                    })
+                    .any(|b| b);
 
                 // Check option to see if we are fetching all txns.
                 if !wallet_tx && download_memos == MemoDownloadOption::AllMemos {
@@ -201,6 +222,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         bsync_data.read().await.sync_status.write().await.trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
+        // println!("Finished batch at {}", temp_start);
         Ok::<(), String>(())
     }
 }

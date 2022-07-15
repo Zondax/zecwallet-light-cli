@@ -135,12 +135,11 @@ impl <P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
 
 #[cfg(test)]
 mod test {
-    use futures::future::join_all;
+    use futures::future::try_join_all;
     use rand::Rng;
     use std::sync::Arc;
     use tokio::join;
     use tokio::sync::mpsc::UnboundedReceiver;
-    use tokio::task::JoinError;
 
     use crate::compact_formats::RawTransaction;
     use crate::lightclient::faketx;
@@ -215,13 +214,7 @@ mod test {
             // Dispatch a set of recievers
             result_tx.send(tx_rs).unwrap();
 
-            let total = join_all(tx_rs_workers)
-                .await
-                .into_iter()
-                .collect::<Result<Vec<i32>, JoinError>>()
-                .map_err(|e| format!("{}", e))?
-                .iter()
-                .sum();
+            let total = try_join_all(tx_rs_workers).await.unwrap().iter().sum::<i32>();
 
             Ok(total)
         });
