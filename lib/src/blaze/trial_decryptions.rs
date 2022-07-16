@@ -4,7 +4,7 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use rayon::prelude::*;
+
 use std::sync::Arc;
 use tokio::{
     runtime::Handle,
@@ -80,7 +80,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                         detected_txid_sender,
                         fulltx_fetcher.clone(),
                     )));
-
                 }
             }
 
@@ -118,7 +117,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         detected_txid_sender: Sender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
-        
         // println!("Starting batch at {}", temp_start);
         let config = keys.read().await.config().clone();
         let blk_count = cbs.len();
@@ -134,7 +132,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
 
                 let wallet_tx = ctx
                     .outputs
-                    // .par_iter()
                     .iter()
                     .enumerate()
                     .map(|(output_num, co)| {

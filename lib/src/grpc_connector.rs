@@ -1,4 +1,3 @@
-use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,8 +10,8 @@ use crate::compact_formats::{
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use log::warn;
-
-use tokio::sync::mpsc::{unbounded_channel, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
@@ -26,7 +25,6 @@ use tonic::{
     transport::{Channel, Error},
     Request,
 };
-
 use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::transaction::{Transaction, TxId};
 
@@ -183,7 +181,6 @@ impl GrpcConnector {
         &self,
         start_height: u64,
         end_height: u64,
-        spam_filter_threshold: i64,
         receivers: &[Sender<CompactBlock>; 2],
     ) -> Result<(), String> {
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
@@ -200,7 +197,6 @@ impl GrpcConnector {
         let request = Request::new(BlockRange {
             start: Some(bs),
             end: Some(be),
-            spam_filter_threshold: cmp::max(0, spam_filter_threshold) as u64,
         });
 
         let mut response = client
@@ -212,13 +208,10 @@ impl GrpcConnector {
         // First download all blocks and save them locally, so we don't timeout
         let mut block_cache = Vec::new();
 
-        while let Some(block) = response.message()
-            .await
-            .map_err(|e| {
-                // println!("first error");
-                format!("{}", e)
-            })?
-        {
+        while let Some(block) = response.message().await.map_err(|e| {
+            // println!("first error");
+            format!("{}", e)
+        })? {
             block_cache.push(block);
         }
 
@@ -252,12 +245,13 @@ impl GrpcConnector {
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
         let response = client.get_transaction(request).await.map_err(|e| format!("{}", e))?;
+
         let height = response.get_ref().height as u32;
         Transaction::read(
             &response.into_inner().data[..],
             BranchId::for_height(&parameters, BlockHeight::from_u32(height)),
         )
-            .map_err(|e| format!("Error parsing Transaction: {}", e))
+        .map_err(|e| format!("Error parsing Transaction: {}", e))
     }
 
     async fn get_taddr_txns(
@@ -287,11 +281,7 @@ impl GrpcConnector {
 
         let args = TransparentAddressBlockFilter {
             address: taddr,
-            range: Some(BlockRange {
-                start,
-                end ,
-                spam_filter_threshold: 0
-            }),
+            range: Some(BlockRange { start, end }),
         };
         let request = Request::new(args.clone());
 

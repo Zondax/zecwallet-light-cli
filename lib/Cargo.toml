@@ -31,7 +31,6 @@ hex = "0.3"
 ring = "0.16.20"
 dirs = "3.0.2"
 json = "0.12.4"
-rayon = "1.5.3"
 webpki-roots = "0.21.0"
 async-trait = "0.1.53"
 

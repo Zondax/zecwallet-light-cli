@@ -3742,7 +3742,6 @@ dependencies = [
  "portpicker",
  "prost",
  "rand 0.8.5",
- "rayon",
  "ring",
  "ripemd160",
  "rust-embed",
