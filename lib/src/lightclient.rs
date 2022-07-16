@@ -1328,7 +1328,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
         let _lock = self.sync_lock.lock().await;
-    
+
         // The top of the wallet
         let last_scanned_height = self.wallet.last_scanned_height().await;
 
@@ -1560,9 +1560,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         // 2. If sync was successfull, also try to get historical prices
         self.update_historical_prices().await;
 
-        // 3. Mark the sync finished, which will clear the nullifier cache etc...
-        bsync_data.read().await.finish().await;
-
         // 4. Remove the witnesses for spent notes more than 100 blocks old, since now there
         // is no risk of reorg
         self.wallet.txns().write().await.clear_old_witnesses(latest_block);
@@ -1692,4 +1689,3 @@ pub(crate) mod test_server;
 
 #[cfg(test)]
 pub(crate) mod faketx;
- 

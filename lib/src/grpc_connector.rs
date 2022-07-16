@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
@@ -14,7 +13,6 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tokio::time::timeout;
 
 use tokio_rustls::{
     rustls::ClientConfig,
