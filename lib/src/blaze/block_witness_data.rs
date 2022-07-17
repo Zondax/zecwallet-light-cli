@@ -481,7 +481,10 @@ impl BlockAndWitnessData {
             }
         }
 
-        Err("Not found!".to_string())
+        Err(format!(
+            "Note witness for tx_num {} output_num{} at height {} Not found!",
+            tx_num, output_num, height
+        ))
     }
 
     // Stream all the outputs start at the block till the highest block available.

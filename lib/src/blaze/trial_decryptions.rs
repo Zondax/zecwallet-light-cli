@@ -4,6 +4,7 @@ use crate::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
+use zcash_note_encryption::batch::try_compact_note_decryption;
 
 use std::sync::Arc;
 use tokio::{
@@ -17,7 +18,7 @@ use tokio::{
 
 use zcash_primitives::{
     consensus::{self, BlockHeight},
-    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
+    sapling::{note_encryption::SaplingDomain, Nullifier, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
@@ -119,6 +120,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
     ) -> Result<(), String> {
         // println!("Starting batch at {}", temp_start);
         let config = keys.read().await.config().clone();
+        let params = config.get_params();
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
 
@@ -127,79 +129,80 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
-            for (tx_num, ctx) in cb.vtx.iter().enumerate() {
+            for (tx_num, ctx) in cb.vtx.into_iter().enumerate() {
                 let tokio_handle = Handle::current();
 
-                let wallet_tx = ctx
+                let ivks_total = ivks.len();
+                let ctx_hash = ctx.hash;
+
+                // Collect Outputs
+                let outputs = ctx
                     .outputs
-                    .iter()
-                    .enumerate()
-                    .map(|(output_num, co)| {
-                        let mut wallet_tx = false;
-                        for (i, ivk) in ivks.iter().enumerate() {
-                            if let Some((note, to)) =
-                                try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
-                            {
-                                wallet_tx = true;
+                    .into_iter()
+                    .map(|o| (SaplingDomain::for_height(params.clone(), height), o))
+                    .collect::<Vec<_>>();
 
-                                let keys = keys.clone();
-                                let bsync_data = bsync_data.clone();
-                                let wallet_txns = wallet_txns.clone();
-                                let detected_txid_sender = detected_txid_sender.clone();
-                                let timestamp = cb.time as u64;
-                                let ctx = ctx.clone();
+                let decrypts = try_compact_note_decryption(ivks.as_ref(), outputs.as_ref());
 
-                                workers.push(tokio_handle.spawn(async move {
-                                    let keys = keys.read().await;
-                                    let extfvk = keys.zkeys[i].extfvk();
-                                    let have_spending_key = keys.have_spending_key(extfvk);
-                                    let uri = bsync_data.read().await.uri().clone();
+                let mut wallet_tx = false;
+                for (dec_num, maybe_decrypted) in decrypts.into_iter().enumerate() {
+                    if let Some((note, to)) = maybe_decrypted {
+                        wallet_tx = true;
 
-                                    // Get the witness for the note
-                                    let witness = bsync_data
-                                        .read()
-                                        .await
-                                        .block_data
-                                        .get_note_witness(uri, height, tx_num, output_num)
-                                        .await?;
+                        let ctx_hash = ctx_hash.clone();
+                        let output_num = dec_num / ivks_total;
+                        let ivk_num = dec_num % ivks_total;
 
-                                    let txid = WalletTx::new_txid(&ctx.hash);
-                                    let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+                        let keys = keys.clone();
+                        let bsync_data = bsync_data.clone();
+                        let wallet_txns = wallet_txns.clone();
+                        let detected_txid_sender = detected_txid_sender.clone();
+                        let timestamp = cb.time as u64;
 
-                                    wallet_txns.write().await.add_new_note(
-                                        txid.clone(),
-                                        height,
-                                        false,
-                                        timestamp,
-                                        note,
-                                        to,
-                                        &extfvk,
-                                        have_spending_key,
-                                        witness,
-                                    );
+                        workers.push(tokio_handle.spawn(async move {
+                            let keys = keys.read().await;
+                            let extfvk = keys.zkeys[ivk_num].extfvk();
+                            let have_spending_key = keys.have_spending_key(extfvk);
+                            let uri = bsync_data.read().await.uri().clone();
 
-                                    info!("Trial decrypt Detected txid {}", &txid);
+                            // Get the witness for the note
+                            let witness = bsync_data
+                                .read()
+                                .await
+                                .block_data
+                                .get_note_witness(uri, height, tx_num, output_num)
+                                .await?;
 
-                                    detected_txid_sender
-                                        .send((txid, nullifier, height, Some(output_num as u32)))
-                                        .await
-                                        .unwrap();
+                            let txid = WalletTx::new_txid(&ctx_hash);
+                            let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
 
-                                    Ok::<_, String>(())
-                                }));
+                            wallet_txns.write().await.add_new_note(
+                                txid.clone(),
+                                height,
+                                false,
+                                timestamp,
+                                note,
+                                to,
+                                &extfvk,
+                                have_spending_key,
+                                witness,
+                            );
 
-                                // No need to try the other ivks if we found one
-                                break;
-                            }
-                        }
+                            info!("Trial decrypt Detected txid {}", &txid);
 
-                        wallet_tx
-                    })
-                    .any(|b| b);
+                            detected_txid_sender
+                                .send((txid, nullifier, height, Some(output_num as u32)))
+                                .await
+                                .unwrap();
+
+                            Ok::<_, String>(())
+                        }));
+                    }
+                }
 
                 // Check option to see if we are fetching all txns.
                 if !wallet_tx && download_memos == MemoDownloadOption::AllMemos {
-                    let txid = WalletTx::new_txid(&ctx.hash);
+                    let txid = WalletTx::new_txid(&ctx_hash);
                     let (tx, rx) = oneshot::channel();
                     fulltx_fetcher.send((txid, tx)).unwrap();
 

@@ -52,6 +52,7 @@ impl SyncStatus {
         self.in_progress = false;
     }
 
+    #[allow(dead_code)]
     fn perct(&self, num: u64) -> u8 {
         let a = if self.blocks_total > 0 {
             let (b, d) = if self.batch_total > 0 {
