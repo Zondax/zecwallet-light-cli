@@ -132,7 +132,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             for (tx_num, ctx) in cb.vtx.into_iter().enumerate() {
                 let tokio_handle = Handle::current();
 
-                let ivks_total = ivks.len();
+                let outputs_total = ctx.outputs.len();
                 let ctx_hash = ctx.hash;
 
                 // Collect Outputs
@@ -150,8 +150,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                         wallet_tx = true;
 
                         let ctx_hash = ctx_hash.clone();
-                        let output_num = dec_num / ivks_total;
-                        let ivk_num = dec_num % ivks_total;
+                        let output_num = dec_num % outputs_total;
+                        let ivk_num = dec_num / outputs_total;
 
                         let keys = keys.clone();
                         let bsync_data = bsync_data.clone();
