@@ -1,8 +1,8 @@
-FROM ubuntu:18.04
+FROM ubuntu:20.04
 LABEL Description="Rust compile env for Linux + Windows (cross)"
 
 RUN apt update
-RUN apt install -y build-essential mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf curl vim wget git
+RUN apt install -y build-essential mingw-w64 gcc-aarch64-linux-gnu gcc-arm-linux-gnueabihf curl vim wget git unzip
 
 # Get Rust
 RUN curl https://sh.rustup.rs -sSf | bash -s -- --default-toolchain none -y
@@ -27,6 +27,10 @@ RUN echo "[target.armv7-unknown-linux-gnueabihf]" >> /root/.cargo/config && \
 ENV CC_x86_64_unknown_linux_musl="gcc" 
 ENV CC_aarch64_unknown_linux_gnu="aarch64-linux-gnu-gcc" 
 ENV CC_armv7_unknown_linux_gnueabhihf="arm-linux-gnueabihf-gcc"
+
+# Install protoc
+RUN cd /tmp && wget https://github.com/protocolbuffers/protobuf/releases/download/v21.2/protoc-21.2-linux-x86_64.zip && \
+    unzip protoc-21.2-linux-x86_64.zip -d /usr/
 
 # For windows cross compilation, use a pre-build binary. Remember to set the
 # SODIUM_LIB_DIR for windows cross compilation
