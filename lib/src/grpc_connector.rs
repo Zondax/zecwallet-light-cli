@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::ServerCert;
 use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::compact_formats::{
     BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
@@ -14,17 +15,14 @@ use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-use tokio_rustls::{
-    rustls::ClientConfig,
-    rustls::{OwnedTrustAnchor, RootCertStore},
-};
-use tonic::transport::ClientTlsConfig;
+use tonic::transport::{ClientTlsConfig, Certificate};
 use tonic::{
     transport::{Channel, Error},
     Request,
 };
 use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::transaction::{Transaction, TxId};
+
 
 #[derive(Clone)]
 pub struct GrpcConnector {
@@ -42,18 +40,13 @@ impl GrpcConnector {
             Channel::builder(self.uri.clone()).connect().await?
         } else {
             //println!("https");
-            let mut root_store = RootCertStore::empty();
-            root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
-            }));
-            let mut config = ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(root_store)
-                .with_no_client_auth();
+            let mut tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
 
-            config.alpn_protocols.push(b"h2".to_vec());
-
-            let tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
+            let server_cert = ServerCert::get("fullchain.pem").unwrap().data;
+            if server_cert.len() > 0 {
+                let server_root_ca_cert = Certificate::from_pem(server_cert);
+                tls = tls.ca_certificate(server_root_ca_cert);
+            }
 
             Channel::builder(self.uri.clone())
                 .tls_config(tls)?

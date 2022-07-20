@@ -13,7 +13,12 @@ pub mod lightwallet;
 #[folder = "zcash-params/"]
 pub struct SaplingParams;
 
-pub use zcash_primitives::consensus::{MainNetwork, Parameters, TestNetwork};
+
+#[derive(RustEmbed)]
+#[folder = "pubkey/" ]
+pub struct ServerCert;
+
+pub use zcash_primitives::consensus::{MainNetwork, Parameters};
 
 // pub mod blaze;
 // pub mod compact_formats;
