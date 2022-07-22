@@ -6,7 +6,7 @@ use log::{error, info};
 
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
 use zecwalletlitelib::{commands, lightclient::LightClient};
-use zecwalletlitelib::{MainNetwork, Parameters};
+use zecwalletlitelib::{MainNetwork, Network, Parameters};
 
 pub mod version;
 
@@ -77,8 +77,17 @@ pub fn startup(
     first_sync: bool,
     print_updates: bool,
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
+    use zecwalletlitelib::lightclient::lightclient_config::ChainType;
+
     // Try to get the configuration
-    let (config, latest_block_height) = LightClientConfig::create(MainNetwork, server.clone())?;
+    let (config, latest_block_height) = LightClientConfig::create(Network::MainNetwork, server.clone())?;
+    let config = match config.chain_type() {
+        //if it's mainnet it should be good
+        // for the other types instead of crashing
+        // let's leave it as is
+        ChainType::Mainnet | ChainType::Regtest | ChainType::Unknown => config,
+        ChainType::Testnet => config.with_params(Network::TestNetwork),
+    };
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),

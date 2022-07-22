@@ -78,6 +78,13 @@ impl Parameters for UnitTestNetwork {
 
 pub const UNITTEST_NETWORK: UnitTestNetwork = UnitTestNetwork;
 
+pub enum ChainType {
+    Mainnet,
+    Testnet,
+    Regtest,
+    Unknown,
+}
+
 #[derive(Clone, Debug)]
 pub struct LightClientConfig<P> {
     pub server: http::Uri,
@@ -196,11 +203,11 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                     zcash_data_location.push(".zcash");
                 };
 
-                match &self.chain_name[..] {
-                    "zs" | "main" => {}
-                    "ztestsapling" => zcash_data_location.push("testnet3"),
-                    "zregtestsapling" => zcash_data_location.push("regtest"),
-                    c => panic!("Unknown chain {}", c),
+                match self.chain_type() {
+                    ChainType::Mainnet => {}
+                    ChainType::Testnet => zcash_data_location.push("testnet3"),
+                    ChainType::Regtest => zcash_data_location.push("regtest"),
+                    ChainType::Unknown => panic!("Unknown chain {}", self.chain_name),
                 };
             }
 
@@ -353,11 +360,42 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
     }
 
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
-        match &self.chain_name[..] {
-            "zs" | "main" => [0x80],
-            "ztestsapling" => [0xEF],
-            "zregtestsapling" => [0xEF],
-            c => panic!("Unknown chain {}", c),
+        match self.chain_type() {
+            ChainType::Mainnet => [0x80],
+            ChainType::Testnet => [0xEF],
+            ChainType::Regtest => [0xEF],
+            ChainType::Unknown => panic!("Unknown chain {}", self.chain_name),
+        }
+    }
+
+    pub fn chain_type(&self) -> ChainType {
+        match self.chain_name.as_str() {
+            "zs" | "main" => ChainType::Mainnet,
+            "ztestsapling" | "test" => ChainType::Testnet,
+            "zregtestsapling" | "regtest" => ChainType::Regtest,
+            _ => ChainType::Unknown,
+        }
+    }
+
+    pub fn with_params<PP: consensus::Parameters>(self, params: PP) -> LightClientConfig<PP> {
+        let Self {
+            server,
+            chain_name,
+            sapling_activation_height,
+            anchor_offset,
+            monitor_mempool,
+            data_dir,
+            params: _,
+        } = self;
+
+        LightClientConfig {
+            server,
+            chain_name,
+            sapling_activation_height,
+            anchor_offset,
+            monitor_mempool,
+            data_dir,
+            params,
         }
     }
 }
