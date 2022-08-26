@@ -107,14 +107,14 @@ pub enum MemoDownloadOption {
 #[derive(Debug, Clone, Copy)]
 pub struct WalletOptions {
     pub(crate) download_memos: MemoDownloadOption,
-    pub(crate) spam_threshold: i64,
+    pub(crate) spam_threshold: u64,
 }
 
 impl Default for WalletOptions {
     fn default() -> Self {
         WalletOptions {
             download_memos: MemoDownloadOption::WalletMemos,
-            spam_threshold: -1,
+            spam_threshold: 0,
         }
     }
 }
@@ -140,9 +140,9 @@ impl WalletOptions {
         };
 
         let spam_threshold = if version <= 1 {
-            -1
+            0
         } else {
-            reader.read_i64::<LittleEndian>()?
+            reader.read_u64::<LittleEndian>()?
         };
 
         Ok(Self {
@@ -157,7 +157,7 @@ impl WalletOptions {
 
         writer.write_u8(self.download_memos as u8)?;
 
-        writer.write_i64::<LittleEndian>(self.spam_threshold)
+        writer.write_u64::<LittleEndian>(self.spam_threshold)
     }
 }
 
@@ -248,6 +248,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     pub async fn set_download_memo(&self, value: MemoDownloadOption) {
         self.wallet_options.write().await.download_memos = value;
+    }
+
+    pub async fn set_spam_filter_threshold(&self, value: u64) {
+        self.wallet_options.write().await.spam_threshold = value;
     }
 
     pub async fn get_birthday(&self) -> u64 {

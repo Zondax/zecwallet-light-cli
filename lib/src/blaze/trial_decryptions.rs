@@ -135,68 +135,70 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                 let outputs_total = ctx.outputs.len();
                 let ctx_hash = ctx.hash;
 
-                // Collect Outputs
-                let outputs = ctx
-                    .outputs
-                    .into_iter()
-                    .map(|o| (SaplingDomain::for_height(params.clone(), height), o))
-                    .collect::<Vec<_>>();
+                if ctx.outputs.len() > 0 && ctx.outputs[0].epk.len() > 0 && ctx.outputs[0].ciphertext.len() > 0 {
+                    // Collect Outputs
+                    let outputs = ctx
+                        .outputs
+                        .into_iter()
+                        .map(|o| (SaplingDomain::for_height(params.clone(), height), o))
+                        .collect::<Vec<_>>();
 
-                let decrypts = try_compact_note_decryption(ivks.as_ref(), outputs.as_ref());
+                    let decrypts = try_compact_note_decryption(ivks.as_ref(), outputs.as_ref());
 
-                let mut wallet_tx = false;
-                for (dec_num, maybe_decrypted) in decrypts.into_iter().enumerate() {
-                    if let Some((note, to)) = maybe_decrypted {
-                        wallet_tx = true;
+                    let mut wallet_tx = false;
+                    for (dec_num, maybe_decrypted) in decrypts.into_iter().enumerate() {
+                        if let Some((note, to)) = maybe_decrypted {
+                            wallet_tx = true;
 
-                        let ctx_hash = ctx_hash.clone();
-                        let output_num = dec_num % outputs_total;
-                        let ivk_num = dec_num / outputs_total;
+                            let ctx_hash = ctx_hash.clone();
+                            let output_num = dec_num % outputs_total;
+                            let ivk_num = dec_num / outputs_total;
 
-                        let keys = keys.clone();
-                        let bsync_data = bsync_data.clone();
-                        let wallet_txns = wallet_txns.clone();
-                        let detected_txid_sender = detected_txid_sender.clone();
-                        let timestamp = cb.time as u64;
+                            let keys = keys.clone();
+                            let bsync_data = bsync_data.clone();
+                            let wallet_txns = wallet_txns.clone();
+                            let detected_txid_sender = detected_txid_sender.clone();
+                            let timestamp = cb.time as u64;
 
-                        workers.push(tokio_handle.spawn(async move {
-                            let keys = keys.read().await;
-                            let extfvk = keys.zkeys[ivk_num].extfvk();
-                            let have_spending_key = keys.have_spending_key(extfvk);
-                            let uri = bsync_data.read().await.uri().clone();
+                            workers.push(tokio_handle.spawn(async move {
+                                let keys = keys.read().await;
+                                let extfvk = keys.zkeys[ivk_num].extfvk();
+                                let have_spending_key = keys.have_spending_key(extfvk);
+                                let uri = bsync_data.read().await.uri().clone();
 
-                            // Get the witness for the note
-                            let witness = bsync_data
-                                .read()
-                                .await
-                                .block_data
-                                .get_note_witness(uri, height, tx_num, output_num)
-                                .await?;
+                                // Get the witness for the note
+                                let witness = bsync_data
+                                    .read()
+                                    .await
+                                    .block_data
+                                    .get_note_witness(uri, height, tx_num, output_num)
+                                    .await?;
 
-                            let txid = WalletTx::new_txid(&ctx_hash);
-                            let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+                                let txid = WalletTx::new_txid(&ctx_hash);
+                                let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
 
-                            wallet_txns.write().await.add_new_note(
-                                txid.clone(),
-                                height,
-                                false,
-                                timestamp,
-                                note,
-                                to,
-                                &extfvk,
-                                have_spending_key,
-                                witness,
-                            );
+                                wallet_txns.write().await.add_new_note(
+                                    txid.clone(),
+                                    height,
+                                    false,
+                                    timestamp,
+                                    note,
+                                    to,
+                                    &extfvk,
+                                    have_spending_key,
+                                    witness,
+                                );
 
-                            info!("Trial decrypt Detected txid {}", &txid);
+                                info!("Trial decrypt Detected txid {}", &txid);
 
-                            detected_txid_sender
-                                .send((txid, nullifier, height, Some(output_num as u32)))
-                                .await
-                                .unwrap();
+                                detected_txid_sender
+                                    .send((txid, nullifier, height, Some(output_num as u32)))
+                                    .await
+                                    .unwrap();
 
-                            Ok::<_, String>(())
-                        }));
+                                Ok::<_, String>(())
+                            }));
+                        }
                     }
                 }
 

@@ -974,6 +974,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SetOptionC
                     "all" => lightclient.wallet.set_download_memo(MemoDownloadOption::AllMemos).await,
                     _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
                 },
+                "spam_filter_threshold" => {
+                    let threshold = option_value.parse::<u64>().unwrap();
+                    lightclient.wallet.set_spam_filter_threshold(threshold).await
+                }
                 _ => return format!("Error: Couldn't understand {}", option_name),
             }
 
@@ -1014,7 +1018,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for GetOptionC
                     MemoDownloadOption::NoMemos => "none",
                     MemoDownloadOption::WalletMemos => "wallet",
                     MemoDownloadOption::AllMemos => "all",
-                },
+                }
+                .to_string(),
+                "spam_filter_threshold" => lightclient
+                    .wallet
+                    .wallet_options
+                    .read()
+                    .await
+                    .spam_threshold
+                    .to_string(),
                 _ => return format!("Error: Couldn't understand {}", option_name),
             };
 
