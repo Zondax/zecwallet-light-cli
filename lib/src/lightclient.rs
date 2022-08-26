@@ -1454,6 +1454,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         }
 
         let bsync_data = self.bsync_data.clone();
+        let spam_filter_threshold = self.wallet.wallet_options.read().await.spam_threshold;
 
         let start_block = latest_block;
         let end_block = last_scanned_height + 1;
@@ -1555,7 +1556,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     [block_and_witness_data_tx, trial_decrypts_tx],
                     start_block,
                     end_block,
-                    0,
+                    spam_filter_threshold,
                     reorg_rx,
                 )
                 .await
