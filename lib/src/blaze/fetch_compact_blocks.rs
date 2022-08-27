@@ -21,7 +21,7 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
         receivers: &[Sender<CompactBlock>; 2],
         start_block: u64,
         end_block: u64,
-        spam_filter_threshold: u64,
+        spam_filter_threshold: i64,
     ) -> Result<(), String> {
         let grpc_client = Arc::new(GrpcConnector::new(self.config.server.clone()));
         const STEP: u64 = 1_000;
@@ -50,7 +50,7 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
         receivers: [Sender<CompactBlock>; 2],
         start_block: u64,
         end_block: u64,
-        spam_filter_threshold: u64,
+        spam_filter_threshold: i64,
         mut reorg_rx: UnboundedReceiver<Option<u64>>,
     ) -> Result<(), String> {
         if start_block < end_block {

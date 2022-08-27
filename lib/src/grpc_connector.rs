@@ -1,3 +1,4 @@
+use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -172,7 +173,7 @@ impl GrpcConnector {
         &self,
         start_height: u64,
         end_height: u64,
-        spam_filter_threshold: u64,
+        spam_filter_threshold: i64,
         receivers: &[Sender<CompactBlock>; 2],
     ) -> Result<(), String> {
         let mut client = self.get_client().await.map_err(|e| format!("{}", e))?;
@@ -189,7 +190,7 @@ impl GrpcConnector {
         let request = Request::new(BlockRange {
             start: Some(bs),
             end: Some(be),
-            spam_filter_threshold,
+            spam_filter_threshold: cmp::max(0, spam_filter_threshold) as u64,
         });
 
         let mut response = client

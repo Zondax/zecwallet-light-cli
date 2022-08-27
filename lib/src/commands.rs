@@ -975,7 +975,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SetOptionC
                     _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
                 },
                 "spam_filter_threshold" => {
-                    let threshold = option_value.parse::<u64>().unwrap();
+                    let threshold = option_value.parse::<i64>().unwrap();
                     lightclient.wallet.set_spam_filter_threshold(threshold).await
                 }
                 _ => return format!("Error: Couldn't understand {}", option_name),
