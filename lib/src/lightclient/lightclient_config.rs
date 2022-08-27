@@ -15,9 +15,10 @@ use log4rs::{
     Config,
 };
 use tokio::runtime::Runtime;
+use zcash_address::Network;
 use zcash_primitives::{
     consensus::{self, BlockHeight, NetworkUpgrade, Parameters},
-    constants::mainnet,
+    constants::{self},
 };
 
 use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
@@ -25,7 +26,7 @@ use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
 pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zecwallet-light-wallet.dat";
 pub const LOGFILE_NAME: &str = "zecwallet-light-wallet.debug.log";
-pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
+pub const DEFAULT_ANCHOR_OFFSET: u32 = 1;
 pub const MAX_REORG: usize = 100;
 pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
     0
@@ -52,27 +53,31 @@ impl Parameters for UnitTestNetwork {
     }
 
     fn coin_type(&self) -> u32 {
-        mainnet::COIN_TYPE
+        constants::mainnet::COIN_TYPE
     }
 
     fn hrp_sapling_extended_spending_key(&self) -> &str {
-        mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY
+        constants::mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY
     }
 
     fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
-        mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
+        constants::mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY
     }
 
     fn hrp_sapling_payment_address(&self) -> &str {
-        mainnet::HRP_SAPLING_PAYMENT_ADDRESS
+        constants::mainnet::HRP_SAPLING_PAYMENT_ADDRESS
     }
 
     fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
-        mainnet::B58_PUBKEY_ADDRESS_PREFIX
+        constants::mainnet::B58_PUBKEY_ADDRESS_PREFIX
     }
 
     fn b58_script_address_prefix(&self) -> [u8; 2] {
-        mainnet::B58_SCRIPT_ADDRESS_PREFIX
+        constants::mainnet::B58_SCRIPT_ADDRESS_PREFIX
+    }
+
+    fn address_network(&self) -> Option<zcash_address::Network> {
+        Some(zcash_address::Network::Main)
     }
 }
 
@@ -83,7 +88,7 @@ pub struct LightClientConfig<P> {
     pub server: http::Uri,
     pub chain_name: String,
     pub sapling_activation_height: u64,
-    pub anchor_offset: [u32; 5],
+    pub anchor_offset: u32,
     pub monitor_mempool: bool,
     pub data_dir: Option<String>,
     pub params: P,
@@ -97,17 +102,18 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             chain_name: params.hrp_sapling_payment_address().to_string(),
             sapling_activation_height: 1,
             monitor_mempool: false,
-            anchor_offset: [4u32; 5],
+            anchor_offset: 1,
             data_dir: dir,
             params: params.clone(),
         }
     }
 
-    pub fn create(params: P, server: http::Uri) -> io::Result<(LightClientConfig<P>, u64)> {
+    pub fn create(params: P, server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig<P>, u64)> {
         use std::net::ToSocketAddrs;
 
         let s = server.clone();
-        let getinfo = Runtime::new().unwrap().block_on(async move {
+        if let Ok((chain_name, sapling_activation_height, block_height)) =
+            Runtime::new().unwrap().block_on(async move {
                 // Test for a connection first
                 format!("{}:{}", server.host().unwrap(), server.port().unwrap())
                     .to_socket_addrs()?
@@ -123,19 +129,20 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                     .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
 
                 Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
-            });
-
-        if let Ok((chain_name, sapling_activation_height, block_height)) = getinfo
+            })
         {
+
+            // Create a Light Client Config
             let config = LightClientConfig {
                 server: s,
                 chain_name,
                 monitor_mempool: false,
                 sapling_activation_height,
-                anchor_offset: ANCHOR_OFFSET,
-                data_dir: None,
+                anchor_offset: DEFAULT_ANCHOR_OFFSET,
+                data_dir: data_dir,
                 params,
             };
+
 
             Ok((config, block_height))
         } else {
@@ -152,6 +159,10 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
 
     pub fn get_params(&self) -> P {
         self.params.clone()
+    }
+
+    pub fn get_network(&self) -> Network {
+        self.params.address_network().unwrap_or(Network::Main).clone()
     }
 
     /// Build the Logging config
@@ -186,6 +197,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path()
         } else {
             let mut zcash_data_location;
+            // If there's some --data-dir path provided, use it
             if self.data_dir.is_some() {
                 zcash_data_location = PathBuf::from(&self.data_dir.as_ref().unwrap());
             } else {
@@ -296,7 +308,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         }
 
         info!("Getting sapling tree from LightwalletD at height {}", height);
-        match GrpcConnector::get_sapling_tree(self.server.clone(), height).await {
+        match GrpcConnector::get_merkle_tree(self.server.clone(), height).await {
             Ok(tree_state) => {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.tree.clone();
@@ -359,8 +371,8 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
     pub fn base58_secretkey_prefix(&self) -> [u8; 1] {
         match &self.chain_name[..] {
             "zs" | "main" => [0x80],
-            "ztestsapling" | "test" => [0xEF],
-            "zregtestsapling" | "regtest" => [0xEF],
+            "ztestsapling" => [0xEF],
+            "zregtestsapling" => [0xEF],
             c => panic!("Unknown chain {}", c),
         }
     }
