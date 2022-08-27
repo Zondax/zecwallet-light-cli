@@ -65,7 +65,7 @@ pub fn main() {
     let (command_tx, resp_rx) = match startup_chan {
         Ok(c) => c,
         Err(e) => {
-            let emsg = format!("Error during startup:{}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
+            let emsg = format!("Error during startup: {}\nIf you repeatedly run into this issue, you might have to restore your wallet from your seed phrase.", e);
             eprintln!("{}", emsg);
             error!("{}", emsg);
             if cfg!(target_os = "unix") {

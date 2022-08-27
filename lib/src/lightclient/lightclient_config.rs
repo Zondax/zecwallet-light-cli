@@ -139,7 +139,10 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
 
             Ok((config, block_height))
         } else {
-            panic!("Couldn't get network");
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                "Couldn't get network from server, connection refused. Is the server address correct?".to_string(),
+            ));
         }
     }
 
