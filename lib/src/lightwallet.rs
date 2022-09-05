@@ -114,7 +114,7 @@ impl Default for WalletOptions {
     fn default() -> Self {
         WalletOptions {
             download_memos: MemoDownloadOption::WalletMemos,
-            spam_threshold: 0,
+            spam_threshold: -1,
         }
     }
 }
