@@ -16,7 +16,7 @@ use log4rs::{
 };
 use tokio::runtime::Runtime;
 use zcash_primitives::{
-    consensus::{self, BlockHeight, NetworkUpgrade, Parameters},
+    consensus::{self, BlockHeight, MainNetwork, NetworkUpgrade, Parameters, TestNetwork},
     constants,
 };
 
@@ -32,6 +32,63 @@ pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", targ
 } else {
     5
 };
+
+#[derive(Debug, Clone)]
+pub enum Network {
+    Main(MainNetwork),
+    Test(TestNetwork),
+}
+
+impl consensus::Parameters for Network {
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match self {
+            Network::Main(net) => net.activation_height(nu),
+            Network::Test(net) => net.activation_height(nu),
+        }
+    }
+
+    fn coin_type(&self) -> u32 {
+        match self {
+            Network::Main(net) => net.coin_type(),
+            Network::Test(net) => net.coin_type(),
+        }
+    }
+
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        match self {
+            Network::Main(net) => net.hrp_sapling_extended_spending_key(),
+            Network::Test(net) => net.hrp_sapling_extended_spending_key(),
+        }
+    }
+
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        match self {
+            Network::Main(net) => net.hrp_sapling_extended_full_viewing_key(),
+            Network::Test(net) => net.hrp_sapling_extended_full_viewing_key(),
+        }
+    }
+
+    fn hrp_sapling_payment_address(&self) -> &str {
+        match self {
+            Network::Main(net) => net.hrp_sapling_payment_address(),
+            Network::Test(net) => net.hrp_sapling_payment_address(),
+        }
+    }
+
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+        match self {
+            Network::Main(net) => net.b58_pubkey_address_prefix(),
+            Network::Test(net) => net.b58_pubkey_address_prefix(),
+        }
+    }
+
+    fn b58_script_address_prefix(&self) -> [u8; 2] {
+        match self {
+            Network::Main(net) => net.b58_script_address_prefix(),
+            Network::Test(net) => net.b58_script_address_prefix(),
+        }
+    }
+}
 
 // Marker struct for the production network.
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -103,7 +160,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         }
     }
 
-    pub fn create(params: P, server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig<P>, u64)> {
+    pub fn create(server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig<Network>, u64)> {
         use std::net::ToSocketAddrs;
 
         let s = server.clone();
@@ -126,6 +183,12 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
             })
         {
+            let params = match &chain_name[..] {
+                "zs" | "main" => Network::Main(MainNetwork),
+                "ztestsapling" | "test" | "zregtestsapling" | "regtest" => Network::Test(TestNetwork),
+                c => panic!("Unknown chain {}", c),
+            };
+
             // Create a Light Client Config
             let config = LightClientConfig {
                 server: s,

@@ -91,7 +91,7 @@ pub fn startup(
     ledger: bool,
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) = LightClientConfig::create(MainNetwork, server.clone(), data_dir)?;
+    let (config, latest_block_height) = LightClientConfig::<MainNetwork>::create(server.clone(), data_dir)?;
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),

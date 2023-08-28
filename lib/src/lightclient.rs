@@ -1460,14 +1460,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         // Full Tx GRPC fetcher
         let params = self.config.get_params();
-        let (fulltx_fetcher_handle, fulltx_fetcher_tx) = grpc_connector.start_fulltx_fetcher(params).await;
+        let (_fulltx_fetcher_handle, fulltx_fetcher_tx) = grpc_connector.start_fulltx_fetcher(params).await;
 
         // Transparent Transactions Fetcher
         let (taddr_fetcher_handle, taddr_fetcher_tx) = grpc_connector.start_taddr_txn_fetcher().await;
 
         // The processor to fetch the full transactions, and decode the memos and the outgoing metadata
         let fetch_full_tx_processor = FetchFullTxns::new(&self.config, self.wallet.keys_clone(), self.wallet.txns());
-        let (fetch_full_txns_handle, scan_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
+        let (_fetch_full_txns_handle, scan_full_txn_tx, fetch_taddr_txns_tx) = fetch_full_tx_processor
             .start(fulltx_fetcher_tx.clone(), bsync_data.clone())
             .await;
 
