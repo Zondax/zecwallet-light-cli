@@ -8,8 +8,6 @@ use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
 use zecwalletlitelib::{commands, lightclient::LightClient};
 use zecwalletlitelib::{MainNetwork, Parameters};
 
-use zecwalletlitelib::{MainNetwork, Parameters, TestNetwork};
-
 pub mod version;
 
 #[macro_export]
@@ -94,7 +92,7 @@ pub fn startup(
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) = LightClientConfig::create(MainNetwork, server.clone(), data_dir)?;
-    
+
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
         None if ledger => Arc::new(LightClient::with_ledger(&config, birthday)?),
@@ -257,6 +255,4 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         data_dir: None,
         params: MainNetwork,
     };
-
 }
-

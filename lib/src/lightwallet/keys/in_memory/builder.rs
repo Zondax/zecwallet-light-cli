@@ -1,6 +1,8 @@
 use rand::rngs::OsRng;
 use secp256k1::PublicKey as SecpPublicKey;
 use std::sync::mpsc;
+use zcash_primitives::consensus::BranchId;
+use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     keys::OutgoingViewingKey,
@@ -14,14 +16,15 @@ use zcash_primitives::{
         Transaction,
     },
 };
-use zcash_primitives::consensus::BranchId;
-use zcash_primitives::transaction::builder::Progress;
 
-use crate::lightwallet::{keys::{
-    in_memory::InMemoryKeys,
-    txbuilder::{SaplingMetadata, TxProver},
-    Builder,
-}, utils::compute_taddr};
+use crate::lightwallet::{
+    keys::{
+        in_memory::InMemoryKeys,
+        txbuilder::{SaplingMetadata, TxProver},
+        Builder,
+    },
+    utils::compute_taddr,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BuilderError {
@@ -78,14 +81,9 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
         ovk: Option<OutgoingViewingKey>,
         to: PaymentAddress,
         value: Amount,
-        memo: Option<MemoBytes>,
+        memo: MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
-        // Compute memo if it exists
-        let encoded_memo = match memo {
-            None => MemoBytes::empty(),
-            Some(s) => s,
-        };
-        self.inner.add_sapling_output(ovk, to, value, encoded_memo)?;
+        self.inner.add_sapling_output(ovk, to, value, memo)?;
         Ok(self)
     }
 

@@ -8,6 +8,7 @@ use std::{
     convert::TryInto,
     io::{self, ErrorKind, Read},
 };
+
 use zcash_note_encryption::{
     EphemeralKeyBytes, NoteEncryption, OutgoingCipherKey, ENC_CIPHERTEXT_SIZE, OUT_CIPHERTEXT_SIZE,
 };
@@ -20,10 +21,6 @@ use zcash_primitives::{
         PaymentAddress, Rseed, SaplingIvk, ValueCommitment,
     },
     transaction::components::{OutputDescription, GROTH_PROOF_SIZE},
-};
-
-use zcash_note_encryption::{
-    EphemeralKeyBytes, NoteEncryption, OutgoingCipherKey, ENC_CIPHERTEXT_SIZE, OUT_CIPHERTEXT_SIZE,
 };
 
 pub struct Message {

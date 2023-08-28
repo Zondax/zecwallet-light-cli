@@ -1,14 +1,12 @@
 use crate::{
     compact_formats::CompactBlock,
-    lightwallet::{data::WalletTx, keys::Keys, wallet_txns::WalletTxns, MemoDownloadOption},
+    lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use zcash_note_encryption::batch::try_compact_note_decryption;
 
 use std::sync::Arc;
 use tokio::{
-    runtime::Handle,
     sync::{
         mpsc::{channel, Sender, UnboundedSender},
         oneshot, RwLock,
@@ -18,26 +16,26 @@ use tokio::{
 
 use zcash_primitives::{
     consensus::{self, BlockHeight},
-    sapling::{note_encryption::SaplingDomain, Nullifier, SaplingIvk},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
     transaction::{Transaction, TxId},
 };
 
 use super::syncdata::BlazeSyncData;
 
 pub struct TrialDecryptions<P> {
-    keys: Arc<RwLock<Keys<P>>>,
+    keys: Arc<RwLock<Keystores<P>>>,
     wallet_txns: Arc<RwLock<WalletTxns>>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
-    pub fn new(keys: Arc<RwLock<Keys<P>>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+    pub fn new(keys: Arc<RwLock<Keystores<P>>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
         Self { keys, wallet_txns }
     }
 
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_txid_sender: Sender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Option<Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> (JoinHandle<Result<(), String>>, Sender<CompactBlock>) {
         //info!("Starting trial decrptions processor");
@@ -52,14 +50,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let ivks = Arc::new(
-                keys.read()
-                    .await
-                    .zkeys
-                    .iter()
-                    .map(|zk| zk.extfvk().fvk.vk.ivk())
-                    .collect::<Vec<_>>(),
-            );
+            let ivks = Arc::new(keys.read().await.get_all_ivks().await.collect::<Vec<_>>());
 
             while let Some(cb) = rx.recv().await {
                 //println!("trial_witness recieved {:?}", cb.height);
@@ -111,16 +102,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
 
     async fn trial_decrypt_batch(
         cbs: Vec<CompactBlock>,
-        keys: Arc<RwLock<Keys<P>>>,
+        keys: Arc<RwLock<Keystores<P>>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         ivks: Arc<Vec<SaplingIvk>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
-        detected_txid_sender: Sender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Option<Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
         // println!("Starting batch at {}", temp_start);
         let config = keys.read().await.config().clone();
-        let params = config.get_params();
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
 
@@ -129,41 +119,31 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
-            for (tx_num, ctx) in cb.vtx.into_iter().enumerate() {
-                let tokio_handle = Handle::current();
+            for (tx_num, ctx) in cb.vtx.iter().enumerate() {
+                let mut wallet_tx = false;
 
-                let outputs_total = ctx.outputs.len();
-                let ctx_hash = ctx.hash;
+                if !(ctx.outputs.len() > 0 && ctx.outputs[0].epk.len() > 0 && ctx.outputs[0].ciphertext.len() > 0) {
+                    continue;
+                }
 
-                if ctx.outputs.len() > 0 && ctx.outputs[0].epk.len() > 0 && ctx.outputs[0].ciphertext.len() > 0 {
-                    // Collect Outputs
-                    let outputs = ctx
-                        .outputs
-                        .into_iter()
-                        .map(|o| (SaplingDomain::for_height(params.clone(), height), o))
-                        .collect::<Vec<_>>();
-
-                    let decrypts = try_compact_note_decryption(ivks.as_ref(), outputs.as_ref());
-
-                    let mut wallet_tx = false;
-                    for (dec_num, maybe_decrypted) in decrypts.into_iter().enumerate() {
-                        if let Some((note, to)) = maybe_decrypted {
+                for (output_num, co) in ctx.outputs.iter().enumerate() {
+                    for (_, ivk) in ivks.iter().enumerate() {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                        {
+                            let ivk = SaplingIvk(ivk.0);
                             wallet_tx = true;
-
-                            let ctx_hash = ctx_hash.clone();
-                            let output_num = dec_num % outputs_total;
-                            let ivk_num = dec_num / outputs_total;
 
                             let keys = keys.clone();
                             let bsync_data = bsync_data.clone();
                             let wallet_txns = wallet_txns.clone();
                             let detected_txid_sender = detected_txid_sender.clone();
                             let timestamp = cb.time as u64;
+                            let ctx = ctx.clone();
 
-                            workers.push(tokio_handle.spawn(async move {
+                            workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
-                                let extfvk = keys.zkeys[ivk_num].extfvk();
-                                let have_spending_key = keys.have_spending_key(extfvk);
+                                let have_spending_key = keys.have_spending_key(&ivk).await;
                                 let uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
@@ -174,17 +154,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                                     .get_note_witness(uri, height, tx_num, output_num)
                                     .await?;
 
-                                let txid = WalletTx::new_txid(&ctx_hash);
-                                let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+                                let txid = WalletTx::new_txid(&ctx.hash);
+                                let nullifier = keys.get_note_nullifier(&ivk, witness.position() as u64, &note).await?;
 
-                                wallet_txns.write().await.add_new_note(
+                                wallet_txns.write().await.add_new_sapling_note(
                                     txid.clone(),
                                     height,
                                     false,
                                     timestamp,
                                     note,
                                     to,
-                                    &extfvk,
+                                    &ivk,
+                                    nullifier,
                                     have_spending_key,
                                     witness,
                                 );
@@ -192,7 +173,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                                 info!("Trial decrypt Detected txid {}", &txid);
 
                                 detected_txid_sender
-                                    .send((txid, nullifier, height, Some(output_num as u32)))
+                                    .send((txid, Some(nullifier), height, Some(output_num as u32)))
                                     .await
                                     .unwrap();
 
@@ -204,7 +185,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
 
                 // Check option to see if we are fetching all txns.
                 if !wallet_tx && download_memos == MemoDownloadOption::AllMemos {
-                    let txid = WalletTx::new_txid(&ctx_hash);
+                    let txid = WalletTx::new_txid(&ctx.hash);
                     let (tx, rx) = oneshot::channel();
                     fulltx_fetcher.send((txid, tx)).unwrap();
 

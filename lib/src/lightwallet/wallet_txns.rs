@@ -304,7 +304,7 @@ impl WalletTxns {
         spent_txid: &TxId,
         spent_at_height: BlockHeight,
     ) -> u64 {
-        let mut note_data = self
+        let note_data: &mut _ = self
             .current
             .get_mut(&txid)
             .unwrap()

@@ -6,7 +6,6 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sodiumoxide::crypto::secretbox;
 
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::consensus;
 use zcash_primitives::{
     consensus,
     sapling::PaymentAddress,
@@ -106,10 +105,6 @@ impl WalletZKey {
 
     pub fn have_spending_key(&self) -> bool {
         self.extsk.is_some() || self.enc_key.is_some() || self.hdkey_num.is_some()
-    }
-
-    pub fn extfvk(&self) -> &'_ ExtendedFullViewingKey {
-        &self.extfvk
     }
 
     fn serialized_version() -> u8 {

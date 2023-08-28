@@ -1,4 +1,4 @@
-use crate::lightwallet::keys::Keys;
+use crate::lightwallet::keys::Keystores;
 use crate::lightwallet::MemoDownloadOption;
 use crate::{lightclient::LightClient, lightwallet::utils};
 use json::object;
@@ -797,7 +797,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                 };
 
                 // Memo has to be None if not sending to a shileded address
-                if memo.is_some() && !Keys::is_shielded_address(&address, &lightclient.config) {
+                if memo.is_some() && !Keystores::is_shielded_address(&address, &lightclient.config.get_params()) {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 

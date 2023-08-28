@@ -9,13 +9,16 @@ use tokio::{
     },
     task::JoinHandle,
 };
-use zcash_primitives::{consensus::{self, BranchId, BlockHeight, Paramters}, transaction::Transaction};
+use zcash_primitives::{
+    consensus::{self, BlockHeight, BranchId},
+    transaction::Transaction,
+};
 
 pub struct FetchTaddrTxns<P> {
     keys: Arc<RwLock<Keystores<P>>>,
 }
 
-impl <P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
+impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
     pub fn new(keys: Arc<RwLock<Keystores<P>>>) -> Self {
         Self { keys }
     }
@@ -114,7 +117,8 @@ impl <P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
                     let tx = Transaction::read(
                         &rtx.data[..],
                         BranchId::for_height(&network, BlockHeight::from_u32(rtx.height as u32)),
-                    ).map_err(|e| format!("Error reading Tx: {}", e))?;
+                    )
+                    .map_err(|e| format!("Error reading Tx: {}", e))?;
                     full_tx_scanner
                         .send((tx, BlockHeight::from_u32(rtx.height as u32)))
                         .unwrap();

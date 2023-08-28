@@ -59,7 +59,7 @@ pub trait Builder {
         ovk: Option<OutgoingViewingKey>,
         to: PaymentAddress,
         value: Amount,
-        memo: Option<MemoBytes>,
+        memo: MemoBytes,
     ) -> Result<&mut Self, Self::Error>;
 
     fn add_transparent_input(

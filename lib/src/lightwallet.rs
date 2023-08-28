@@ -14,7 +14,6 @@ use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use futures::Future;
 use log::{error, info, warn};
 use std::convert::TryFrom;
-use std::sync::mpsc;
 use std::{
     cmp,
     collections::HashMap,
@@ -916,7 +915,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
             // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
             if maybe_existing_zkey.is_some() {
-                let mut existing_zkey = maybe_existing_zkey.unwrap();
+                let existing_zkey: &mut _ = maybe_existing_zkey.unwrap();
                 existing_zkey.extsk = Some(extsk);
                 existing_zkey.keytype = WalletZKeyType::ImportedSpendingKey;
                 existing_zkey.zaddress.clone()
@@ -1239,13 +1238,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             (map, first)
         };
 
-        let (notes, utxos, selected_value) = self
-            .select_notes_and_utxos(target_amount.unwrap(), transparent_only, true)
-            .await;
-        if selected_value < target_amount.unwrap() {
+        let (notes, utxos, selected_value) = self.select_notes_and_utxos(target_amount, transparent_only, true).await;
+        if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount.unwrap()), self.config.anchor_offset.last().unwrap() + 1
+                u64::from(selected_value), u64::from(target_amount), self.config.anchor_offset.last().unwrap() + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1413,7 +1410,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             // Mark sapling notes as unconfirmed spent
             let mut txs = self.txns.write().await;
             for selected in notes {
-                let mut spent_note = txs
+                let spent_note: &mut _ = txs
                     .current
                     .get_mut(&selected.txid)
                     .unwrap()
@@ -1426,7 +1423,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let mut spent_utxo = txs
+                let spent_utxo: &mut _ = txs
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()

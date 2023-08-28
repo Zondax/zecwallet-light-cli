@@ -269,6 +269,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
         }
     }
 
+    /// Compute wheter the given `addr` is a shielded address w.r.t. the given set of params
+    pub fn is_shielded_address(addr: &String, params: &P) -> bool {
+        use zcash_client_backend::address::RecipientAddress;
+
+        match RecipientAddress::decode(params, addr) {
+            Some(RecipientAddress::Shielded(_)) => true,
+            _ => false,
+        }
+    }
+
     /// Perform bech32 encoding of the given address
     pub fn encode_zaddr(&self, addr: PaymentAddress) -> String {
         let config = match self {

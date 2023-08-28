@@ -5,8 +5,6 @@ use std::convert::TryInto;
 
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 
-use std::convert::TryFrom;
-use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
     consensus::{BlockHeight, Parameters},
