@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use tokio::runtime::Runtime;
 use zcash_primitives::consensus::{self};
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
@@ -739,7 +738,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     return format!("Couldn't parse argument as array\n{}", Command::<P>::help(self));
                 }
 
-                let fee = u64::from(DEFAULT_FEE);
+                let fee = lightclient.wallet.fee().await;
                 let all_zbalance = lightclient.wallet.verified_zbalance(None).await.checked_sub(fee);
 
                 let maybe_send_args = json_args
@@ -779,10 +778,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     Ok(amt) => amt,
                     Err(e) => {
                         if args[1] == "entire-verified-zbalance" {
-                            let fee = u64::from(DEFAULT_FEE);
+                            let fee = lightclient.wallet.fee().await;
                             match lightclient.wallet.verified_zbalance(None).await.checked_sub(fee) {
                                 Some(amt) => amt,
-                                None => return format!("Not enough in wallet to pay transaction fee of {}", fee),
+                                None => return format!("Not enough in wallet to pay transaction fee of {fee}"),
                             }
                         } else {
                             return format!("Couldn't parse amount: {}", e);
@@ -1184,13 +1183,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFee
     fn short_help(&self) -> String {
         "Returns the default fee in zats for outgoing transactions".to_string()
     }
-    fn exec(&self, args: &[&str], _client: &LightClient<P>) -> String {
+    fn exec(&self, args: &[&str], client: &LightClient<P>) -> String {
         if args.len() > 1 {
             return format!("Was expecting at most 1 argument\n{}", Command::<P>::help(self));
         }
 
         RT.block_on(async move {
-            let j = object! { "defaultfee" => u64::from(DEFAULT_FEE)};
+            let fee = client.wallet.fee().await;
+            let j = object! { "defaultfee" => fee };
             j.pretty(2)
         })
     }

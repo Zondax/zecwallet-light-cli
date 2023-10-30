@@ -89,5 +89,6 @@ pub trait Builder {
         mut self,
         consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
+        fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> ;
 }

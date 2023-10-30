@@ -31,7 +31,7 @@ use zcash_primitives::{
     consensus::{self, BlockHeight, BranchId},
     legacy::Script,
     memo::{Memo, MemoBytes},
-    transaction::components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
+    transaction::components::{Amount, OutPoint, TxOut},
     zip32::ExtendedFullViewingKey,
 };
 
@@ -547,9 +547,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 })
         });
     }
-}
 
-impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn in_memory_keys<'this>(
         &'this self,
     ) -> Result<impl std::ops::Deref<Target = InMemoryKeys<P>> + 'this, io::Error> {
@@ -753,10 +751,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     async fn select_notes_and_utxos(
         &self,
-        target_amount: Amount,
+        total_value: Amount,
         transparent_only: bool,
         shield_transparenent: bool,
-    ) -> (Vec<SpendableNote>, Vec<Utxo>, Amount) {
+    ) -> (Vec<SpendableNote>, Vec<Utxo>, Amount, Amount) {
         // First, if we are allowed to pick transparent value, pick them all
         let utxos = if transparent_only || shield_transparenent {
             self.get_utxos()
@@ -774,9 +772,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
         });
 
+        let fees = Amount::from_u64(self.fee().await).unwrap();
+
         // If we are allowed only transparent funds or we've selected enough then return
-        if transparent_only || transparent_value_selected >= target_amount {
-            return (vec![], utxos, transparent_value_selected);
+        if transparent_only || transparent_value_selected >= total_value {
+            return (vec![], utxos, transparent_value_selected, fees);
         }
 
         // Start collecting sapling funds at every allowed offset
@@ -811,7 +811,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             let notes = candidate_notes
                 .into_iter()
                 .scan(Amount::zero(), |running_total, spendable| {
-                    if *running_total >= (target_amount - transparent_value_selected).unwrap() {
+                    if *running_total >= (total_value - transparent_value_selected).unwrap() {
                         None
                     } else {
                         *running_total += Amount::from_u64(spendable.note.value).unwrap();
@@ -825,13 +825,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
             let amount = sapling_value_selected + transparent_value_selected;
             let amount = amount.unwrap();
-            if amount >= target_amount {
-                return (notes, utxos, amount);
+            if amount >= total_value {
+                return (notes, utxos, amount, fees);
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], Amount::zero())
+        (vec![], vec![], Amount::zero(), fees)
     }
 
     pub async fn is_unlocked_for_spending(&self) -> bool {
@@ -1137,7 +1137,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<(String, Vec<u8>, Amount), String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -1150,9 +1150,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .send_to_address_internal(consensus_branch_id, prover, transparent_only, tos, broadcast_fn)
             .await
         {
-            Ok((txid, rawtx)) => {
+            Ok((txid, rawtx, fees)) => {
                 self.set_send_success(txid.clone()).await;
-                Ok((txid, rawtx))
+                Ok((txid, rawtx, fees))
             }
             Err(e) => {
                 self.set_send_error(format!("{}", e)).await;
@@ -1168,7 +1168,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
-    ) -> Result<(String, Vec<u8>), String>
+    ) -> Result<(String, Vec<u8>, Amount), String>
     where
         F: Fn(Box<[u8]>) -> Fut,
         Fut: Future<Output = Result<String, String>>,
@@ -1211,7 +1211,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
-        let target_amount = (Amount::from_u64(total_value).unwrap() + DEFAULT_FEE).unwrap();
+        let total_value = Amount::from_u64(total_value).unwrap();
         let target_height = match self.get_target_height().await {
             Some(h) => BlockHeight::from_u32(h),
             None => return Err("No blocks in wallet to target, please sync first".to_string()),
@@ -1238,11 +1238,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             (map, first)
         };
 
-        let (notes, utxos, selected_value) = self.select_notes_and_utxos(target_amount, transparent_only, true).await;
-        if selected_value < target_amount {
+        let (notes, utxos, selected_value, fees) =
+            self.select_notes_and_utxos(total_value, transparent_only, true).await;
+        if selected_value < (total_value + fees).unwrap() {
             let e = format!(
-                "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount), self.config.anchor_offset.last().unwrap() + 1
+                "Insufficient verified funds. Have {} zats, need {} zats + {} zats in fees. NOTE: funds need at least {} confirmations before they can be spent.",
+                u64::from(selected_value),
+                u64::from(total_value),
+                u64::from(fees),
+                self.config.anchor_offset.last().unwrap() + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1373,7 +1377,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         println!("{}: Building transaction", now() - start_time);
         let (tx, _) = match builder
-            .build(BranchId::try_from(consensus_branch_id).unwrap(), &prover)
+            .build(BranchId::try_from(consensus_branch_id).unwrap(), &prover, fees.into())
             .await
         {
             Ok(res) => {
@@ -1452,7 +1456,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await;
         }
 
-        Ok((txid, raw_tx))
+        Ok((txid, raw_tx, fees))
     }
 
     pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
@@ -1489,6 +1493,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             //TODO: do appropriate work here for other keystores
             _ => Ok(()),
         }
+    }
+
+    pub async fn fee(&self) -> u64 {
+        u64::from(zcash_primitives::transaction::components::amount::DEFAULT_FEE)
     }
 }
 
@@ -1537,7 +1545,7 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1554,14 +1562,14 @@ mod test {
 
         // With min anchor_offset at 1, we can't select any notes
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, _selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // Mine 1 block, then it should be selectable
         mine_random_blocks(&mut fcbl, &data, &lc, 1).await;
 
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1579,7 +1587,7 @@ mod test {
         // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
         mine_random_blocks(&mut fcbl, &data, &lc, 15).await;
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1596,7 +1604,7 @@ mod test {
 
         // Trying to select a large amount will fail
         let amt = Amount::from_u64(1_000_000).unwrap();
-        let (notes, utxos, _selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
@@ -1613,14 +1621,14 @@ mod test {
 
         // Trying to select a large amount will now succeed
         let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
         assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
         assert_eq!(notes.len(), 1);
         assert_eq!(utxos.len(), 1);
 
         // If we set transparent-only = true, only the utxo should be selected
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, true, true).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, true, true).await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
@@ -1628,7 +1636,7 @@ mod test {
         // Set min confs to 5, so the sapling note will not be selected
         lc.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
         let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
@@ -1669,7 +1677,7 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1694,7 +1702,7 @@ mod test {
 
         // Now, try to select a small amount, it should prefer the older note
         let amt = Amount::from_u64(10_000).unwrap();
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1702,7 +1710,7 @@ mod test {
 
         // Selecting a bigger amount should select both notes
         let amt = Amount::from_u64(value1 + value2).unwrap();
-        let (notes, utxos, selected) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
         assert!(selected == amt);
         assert_eq!(notes.len(), 2);
         assert_eq!(utxos.len(), 0);

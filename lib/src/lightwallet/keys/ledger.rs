@@ -22,7 +22,7 @@ use zcash_primitives::{
     merkle_tree::MerklePath,
     sapling::{Diversifier, Node, Note, Nullifier, PaymentAddress, SaplingIvk},
     transaction::{
-        components::{amount::DEFAULT_FEE, Amount, OutPoint, TxOut},
+        components::{Amount, OutPoint, TxOut},
         Transaction,
     },
     zip32::{ChildIndex, DiversifierIndex},
@@ -802,6 +802,7 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
         mut self,
         consensus_branch_id: BranchId,
         prover: &(impl TxProver + Send + Sync),
+        fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         let tx = self
             .inner
@@ -809,7 +810,7 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
                 &mut self.keystore.app,
                 self.params,
                 prover,
-                DEFAULT_FEE.into(),
+                fee,
                 &mut OsRng,
                 self.target_height.into(),
                 consensus_branch_id,

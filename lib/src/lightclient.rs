@@ -34,7 +34,7 @@ use zcash_primitives::{
     block::BlockHash,
     consensus::{self, BlockHeight, BranchId},
     memo::{Memo, MemoBytes},
-    transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
+    transaction::{Transaction, TxId},
 };
 
 cfg_if::cfg_if! {
@@ -1583,7 +1583,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let fee = u64::from(DEFAULT_FEE);
+        let fee = self.wallet.fee().await;
         let tbal = self.wallet.tbalance(None).await;
 
         // Make sure there is a balance, and it is greated than the amount
@@ -1620,7 +1620,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(txid, _, _)| txid)
     }
 
     pub async fn do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
@@ -1642,7 +1642,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(txid, _, _)| txid)
     }
 
     pub fn do_wallet_kind_sync(&self) -> String {
@@ -1661,7 +1661,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     #[cfg(test)]
-    pub async fn test_do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<String, String> {
+    pub async fn test_do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<(String, Amount), String> {
+
+
         let branch_id = self.consensus_branch_id().await;
         info!("Creating transaction");
 
@@ -1676,7 +1678,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .await
         };
 
-        result.map(|(txid, _)| txid)
+        result.map(|(txid, _, fees)| (txid, fees))
     }
 }
 

@@ -562,11 +562,12 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
         mut self,
         consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
+        fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         match self {
-            Self::Memory(this) => this.build(consensus, prover).await.map_err(Into::into),
+            Self::Memory(this) => this.build(consensus, prover, fee).await.map_err(Into::into),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this.build(consensus, prover).await.map_err(Into::into),
+            Self::Ledger(this) => this.build(consensus, prover, fee).await.map_err(Into::into),
         }
     }
 }
