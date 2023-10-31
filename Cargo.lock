@@ -3715,6 +3715,7 @@ dependencies = [
  "secp256k1",
  "sha2 0.9.9",
  "sodiumoxide",
+ "tap",
  "tempdir",
  "thiserror",
  "tiny-bip39",

@@ -1583,7 +1583,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     pub async fn do_shield(&self, address: Option<String>) -> Result<String, String> {
-        let fee = self.wallet.fee().await;
+        let fee = self.wallet.fee(0, 0, 0, 0, 0);
         let tbal = self.wallet.tbalance(None).await;
 
         // Make sure there is a balance, and it is greated than the amount

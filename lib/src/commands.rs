@@ -738,8 +738,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     return format!("Couldn't parse argument as array\n{}", Command::<P>::help(self));
                 }
 
-                let fee = lightclient.wallet.fee().await;
-                let all_zbalance = lightclient.wallet.verified_zbalance(None).await.checked_sub(fee);
+                let all_zbalance = lightclient.wallet.verified_zbalance(None).await;
 
                 let maybe_send_args = json_args
                     .members()
@@ -747,19 +746,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                         if !j.has_key("address") || !j.has_key("amount") {
                             Err(format!("Need 'address' and 'amount'\n"))
                         } else {
-                            let amount = match j["amount"].as_str() {
+                            let amt = match j["amount"].as_str() {
                                 Some("entire-verified-zbalance") => all_zbalance,
-                                _ => Some(j["amount"].as_u64().unwrap()),
+                                _ => j["amount"].as_u64().unwrap(),
                             };
 
-                            match amount {
-                                Some(amt) => Ok((
-                                    j["address"].as_str().unwrap().to_string().clone(),
-                                    amt,
-                                    j["memo"].as_str().map(|s| s.to_string().clone()),
-                                )),
-                                None => Err(format!("Not enough in wallet to pay transaction fee of {}", fee)),
-                            }
+                            Ok((
+                                j["address"].as_str().unwrap().to_string().clone(),
+                                amt,
+                                j["memo"].as_str().map(|s| s.to_string().clone()),
+                            ))
                         }
                     })
                     .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
@@ -778,11 +774,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     Ok(amt) => amt,
                     Err(e) => {
                         if args[1] == "entire-verified-zbalance" {
-                            let fee = lightclient.wallet.fee().await;
-                            match lightclient.wallet.verified_zbalance(None).await.checked_sub(fee) {
-                                Some(amt) => amt,
-                                None => return format!("Not enough in wallet to pay transaction fee of {fee}"),
-                            }
+                            lightclient.wallet.verified_zbalance(None).await
                         } else {
                             return format!("Couldn't parse amount: {}", e);
                         }
@@ -1171,7 +1163,7 @@ struct DefaultFeeCommand {}
 impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFeeCommand {
     fn help(&self) -> String {
         let mut h = vec![];
-        h.push("Returns the default fee in zats for outgoing transactions");
+        h.push("Returns the minimum fee in zats for outgoing transactions");
         h.push("Usage:");
         h.push("defaultfee <optional_block_height>");
         h.push("");
@@ -1181,7 +1173,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFee
     }
 
     fn short_help(&self) -> String {
-        "Returns the default fee in zats for outgoing transactions".to_string()
+        "Returns the minumum fee in zats for outgoing transactions".to_string()
     }
     fn exec(&self, args: &[&str], client: &LightClient<P>) -> String {
         if args.len() > 1 {
@@ -1189,7 +1181,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFee
         }
 
         RT.block_on(async move {
-            let fee = client.wallet.fee().await;
+            let fee = client.wallet.fee(0, 0, 0, 0, 0);
             let j = object! { "defaultfee" => fee };
             j.pretty(2)
         })

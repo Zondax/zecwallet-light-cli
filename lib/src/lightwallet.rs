@@ -21,6 +21,7 @@ use std::{
     sync::{atomic::AtomicU64, mpsc, Arc},
     time::SystemTime,
 };
+use tap::Pipe;
 use tokio::sync::RwLock;
 use zcash_client_backend::{
     address,
@@ -754,6 +755,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         total_value: Amount,
         transparent_only: bool,
         shield_transparenent: bool,
+        tranparent_outputs_n: usize,
+        sapling_outputs_n: usize,
     ) -> (Vec<SpendableNote>, Vec<Utxo>, Amount, Amount) {
         // First, if we are allowed to pick transparent value, pick them all
         let utxos = if transparent_only || shield_transparenent {
@@ -767,21 +770,22 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             vec![]
         };
 
+        let current_fee = self
+            .fee(utxos.len(), tranparent_outputs_n, 0, sapling_outputs_n, 0)
+            .pipe(|amt| Amount::from_u64(amt).unwrap());
+
         // Check how much we've selected
         let transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
             (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
         });
 
-        let fees = Amount::from_u64(self.fee().await).unwrap();
-
         // If we are allowed only transparent funds or we've selected enough then return
-        if transparent_only || transparent_value_selected >= total_value {
-            return (vec![], utxos, transparent_value_selected, fees);
+        if transparent_only || (transparent_value_selected - current_fee).unwrap() >= total_value {
+            return (vec![], utxos, transparent_value_selected, current_fee);
         }
 
         // Start collecting sapling funds at every allowed offset
         for anchor_offset in &self.config.anchor_offset {
-            //TODO: allow any keystore (see usage)
             let keys = self.keys().read().await;
 
             let mut candidate_notes = Vec::new();
@@ -810,11 +814,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             // Select the minimum number of notes required to satisfy the target value
             let notes = candidate_notes
                 .into_iter()
-                .scan(Amount::zero(), |running_total, spendable| {
-                    if *running_total >= (total_value - transparent_value_selected).unwrap() {
+                .scan((0, Amount::zero()), |(n_notes, running_total), spendable| {
+                    let current_fee = self
+                        .fee(utxos.len(), tranparent_outputs_n, *n_notes, sapling_outputs_n, 0)
+                        .pipe(|amt| Amount::from_u64(amt).unwrap());
+
+                    if *running_total >= (total_value - transparent_value_selected + current_fee).unwrap() {
                         None
                     } else {
                         *running_total += Amount::from_u64(spendable.note.value).unwrap();
+                        *n_notes += 1;
                         Some(spendable)
                     }
                 })
@@ -823,15 +832,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap()
             });
 
+            let fees = self
+                .fee(utxos.len(), tranparent_outputs_n, notes.len(), sapling_outputs_n, 0)
+                .pipe(|amt| Amount::from_u64(amt).unwrap());
+
             let amount = sapling_value_selected + transparent_value_selected;
             let amount = amount.unwrap();
-            if amount >= total_value {
+            if amount >= (total_value + fees).unwrap() {
                 return (notes, utxos, amount, fees);
             }
         }
 
         // If we can't select enough, then we need to return empty handed
-        (vec![], vec![], Amount::zero(), fees)
+        (vec![], vec![], Amount::zero(), Amount::zero())
     }
 
     pub async fn is_unlocked_for_spending(&self) -> bool {
@@ -1208,6 +1221,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             })
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>()?;
 
+        let (touts_n, sapling_outputs_n) = recepients.iter().fold((0, 0), |(tout, sout), (addr, _, _)| match addr {
+            address::RecipientAddress::Shielded(_) => (tout, sout + 1),
+            address::RecipientAddress::Transparent(_) => (tout + 1, sout),
+        });
+
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
 
@@ -1238,8 +1256,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             (map, first)
         };
 
-        let (notes, utxos, selected_value, fees) =
-            self.select_notes_and_utxos(total_value, transparent_only, true).await;
+        let (notes, utxos, selected_value, fees) = self
+            .select_notes_and_utxos(total_value, transparent_only, true, touts_n, sapling_outputs_n)
+            .await;
         if selected_value < (total_value + fees).unwrap() {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats + {} zats in fees. NOTE: funds need at least {} confirmations before they can be spent.",
@@ -1495,8 +1514,24 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    pub async fn fee(&self) -> u64 {
-        u64::from(zcash_primitives::transaction::components::amount::DEFAULT_FEE)
+    pub fn fee(
+        &self,
+        tins_n: usize,
+        touts_n: usize,
+        sapling_spends_n: usize,
+        sapling_outputs_n: usize,
+        orchard_n: usize,
+    ) -> u64 {
+        use std::cmp::max;
+
+        let logical_actions = max(tins_n, touts_n) + max(sapling_spends_n, sapling_outputs_n) + orchard_n;
+
+        const MARGINAL_FEE: u64 = 5000;
+        const GRACE_ACTIONS: usize = 2;
+
+        let actions = max(GRACE_ACTIONS, logical_actions);
+
+        MARGINAL_FEE * (actions as u64)
     }
 }
 
@@ -1545,7 +1580,7 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1562,14 +1597,14 @@ mod test {
 
         // With min anchor_offset at 1, we can't select any notes
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // Mine 1 block, then it should be selectable
         mine_random_blocks(&mut fcbl, &data, &lc, 1).await;
 
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1587,7 +1622,7 @@ mod test {
         // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
         mine_random_blocks(&mut fcbl, &data, &lc, 15).await;
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1604,7 +1639,7 @@ mod test {
 
         // Trying to select a large amount will fail
         let amt = Amount::from_u64(1_000_000).unwrap();
-        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
@@ -1620,23 +1655,23 @@ mod test {
         mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
         // Trying to select a large amount will now succeed
-        let amt = Amount::from_u64(value + tvalue - 10_000).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let amt = Amount::from_u64(value + tvalue - lc.wallet.fee(1, 1, 0, 0, 0)).unwrap();
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
         assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
         assert_eq!(notes.len(), 1);
         assert_eq!(utxos.len(), 1);
 
         // If we set transparent-only = true, only the utxo should be selected
-        let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, true, true).await;
+        let amt = Amount::from_u64(tvalue - lc.wallet.fee(1, 0, 0, 0, 0)).unwrap();
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, true, true, 0, 0).await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
 
         // Set min confs to 5, so the sapling note will not be selected
         lc.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
-        let amt = Amount::from_u64(tvalue - 10_000).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true).await;
+        let amt = Amount::from_u64(tvalue - lc.wallet.fee(1, 0, 0, 0, 0)).unwrap();
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
@@ -1677,7 +1712,7 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected, fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1702,7 +1737,7 @@ mod test {
 
         // Now, try to select a small amount, it should prefer the older note
         let amt = Amount::from_u64(10_000).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1710,7 +1745,7 @@ mod test {
 
         // Selecting a bigger amount should select both notes
         let amt = Amount::from_u64(value1 + value2).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false).await;
+        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
         assert!(selected == amt);
         assert_eq!(notes.len(), 2);
         assert_eq!(utxos.len(), 0);
