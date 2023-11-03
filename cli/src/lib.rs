@@ -1,12 +1,12 @@
-use std::io::{self};
+use std::io;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use log::{error, info};
 
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
+use zecwalletlitelib::primitives::consensus::{MainNetwork, Parameters};
 use zecwalletlitelib::{commands, lightclient::LightClient};
-use zecwalletlitelib::{MainNetwork, Parameters};
 
 pub mod version;
 
