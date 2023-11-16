@@ -2,11 +2,23 @@
 
 `zecwallet-cli` is a command line ZecWallet light client. To use it, download the latest binary from the releases page and run `./zecwallet-cli`
 
-This will launch the interactive prompt. Type `help` to get a list of commands
+This will launch the interactive prompt. Type `help` to get a list of commands. See the [Prompt Usage](PROMPT.md) document for more usage information. 
 
 ## Running in non-interactive mode:
 You can also run `zecwallet-cli` in non-interactive mode by passing the command you want to run as an argument. For example, `zecwallet-cli addresses` will list all wallet addresses and exit. 
 Run `zecwallet-cli help` to see a list of all commands. 
+
+## Running using a Ledger device (BETA)
+It's possible to use a Ledger device via the [Zondax app](https://github.com/Zondax/ledger-zcash). To do so, invoke the cli with `--ledger`, in addition to any other flags you wish to use.
+Do note that not all functionality is available, namely encrypting the wallet data, exporting or importing secret keys and addresses.
+The main thing to keep in mind when using a ledger device is that signing keys never leave the device, and for privacy viewing keys are not stored between sessions. 
+Additionaly, some actions may require to be confirmed on the device, but this isn't signalled by the cli.
+
+Currently interacting with the device is necessary when:
+- generating sapling addresses (IVK and OVK
+- starting up the wallet (for the above reason)
+- sending funds, to review transaction details
+- while syncing, to retrieve nullifiers
 
 ## Privacy 
 * While all the keys and transaction detection happens on the client, the server can learn what blocks contain your shielded transactions.
@@ -28,7 +40,7 @@ Zecwallet-CLI does automatic note and utxo management, which means it doesn't al
 ## Compiling from source
 
 #### Pre-requisites
-* Rust v1.37 or higher.
+* Rust v1.56 or higher.
     * Run `rustup update` to get the latest version of Rust if you already have it installed
 * Rustfmt
     * Run `rustup component add rustfmt` to add rustfmt
@@ -36,7 +48,7 @@ Zecwallet-CLI does automatic note and utxo management, which means it doesn't al
     * Please install the build tools for your platform. On Ubuntu `sudo apt install build-essential gcc`
 
 ```
-git clone https://github.com/adityapk00/zecwallet-light-cli.git
+git clone https://github.com/Zondax/zecwallet-light-cli.git
 cargo build --release
 ./target/release/zecwallet-cli
 ```

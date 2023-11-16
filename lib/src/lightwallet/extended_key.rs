@@ -1,6 +1,9 @@
+use hmac::{Mac, NewMac};
 use lazy_static::lazy_static;
-use ring::hmac::{self, Context, Key};
 use secp256k1::{Error, PublicKey, Secp256k1, SecretKey, SignOnly};
+
+type Hmac = hmac::Hmac<sha2::Sha512>;
+type HmacOutput = hmac::crypto_mac::Output<Hmac>;
 
 lazy_static! {
     static ref SECP256K1_SIGN_ONLY: Secp256k1<SignOnly> = Secp256k1::signing_only();
@@ -66,12 +69,11 @@ impl ExtendedPrivKey {
     /// Generate an ExtendedPrivKey from seed
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
         let signature = {
-            let signing_key = Key::new(hmac::HMAC_SHA512, b"Bitcoin seed");
-            let mut h = Context::with_key(&signing_key);
-            h.update(&seed);
-            h.sign()
+            let mut hmac = Hmac::new_from_slice(b"Bitcoin seed").unwrap();
+            hmac.update(&seed);
+            hmac.finalize().into_bytes()
         };
-        let sig_bytes = signature.as_ref();
+        let sig_bytes = signature.as_slice();
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
         let private_key = SecretKey::from_slice(key)?;
         Ok(ExtendedPrivKey {
@@ -80,22 +82,20 @@ impl ExtendedPrivKey {
         })
     }
 
-    fn sign_hardended_key(&self, index: u32) -> ring::hmac::Tag {
-        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
-        let mut h = Context::with_key(&signing_key);
+    fn sign_hardended_key(&self, index: u32) -> HmacOutput {
+        let mut h = Hmac::new_from_slice(&self.chain_code).unwrap();
         h.update(&[0x00]);
         h.update(&self.private_key[..]);
         h.update(&index.to_be_bytes());
-        h.sign()
+        h.finalize()
     }
 
-    fn sign_normal_key(&self, index: u32) -> ring::hmac::Tag {
-        let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
-        let mut h = Context::with_key(&signing_key);
+    fn sign_normal_key(&self, index: u32) -> HmacOutput {
+        let mut h = Hmac::new_from_slice(&self.chain_code).unwrap();
         let public_key = PublicKey::from_secret_key(&SECP256K1_SIGN_ONLY, &self.private_key);
         h.update(&public_key.serialize());
         h.update(&index.to_be_bytes());
-        h.sign()
+        h.finalize()
     }
 
     /// Derive a child key from ExtendedPrivKey.
@@ -107,8 +107,8 @@ impl ExtendedPrivKey {
             KeyIndex::Hardened(index) => self.sign_hardended_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
-        let sig_bytes = signature.as_ref();
-        let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
+        let sig_bytes = signature.into_bytes();
+        let (key, chain_code) = sig_bytes.as_slice().split_at(sig_bytes.len() / 2);
         let mut private_key = SecretKey::from_slice(key)?;
         private_key.add_assign(&self.private_key[..])?;
         Ok(ExtendedPrivKey {

@@ -139,6 +139,7 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
         mut self,
         _: BranchId,
         prover: &(impl TxProver + Send + Sync),
+        _: u64, //TODO: pass fee to builder
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         self.inner
             .build(prover)
