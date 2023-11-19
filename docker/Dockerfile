@@ -34,11 +34,12 @@ RUN cd /tmp && wget https://github.com/protocolbuffers/protobuf/releases/downloa
 
 # For windows cross compilation, use a pre-build binary. Remember to set the
 # SODIUM_LIB_DIR for windows cross compilation
+# FIXME: returns 404 - replace libsodium with crypto_secretbox
 RUN cd /opt && wget https://download.libsodium.org/libsodium/releases/libsodium-1.0.17-mingw.tar.gz && \
     tar xvf libsodium-1.0.17-mingw.tar.gz     
 
 # Cargo fetch the dependencies so we don't download them over and over again
-RUN cd /tmp && git clone --depth=1 https://github.com/adityapk00/zecwallet-light-cli.git && \
+RUN cd /tmp && git clone --depth=1 https://github.com/Zondax/zecwallet-light-cli.git && \
     cd zecwallet-light-cli && \
     cargo fetch && \
     cd /tmp && rm -rf zecwallet-light-cli
