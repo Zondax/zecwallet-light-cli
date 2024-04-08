@@ -1,25 +1,27 @@
-use crate::compact_formats::RawTransaction;
-
-use crate::lightwallet::keys::Keys;
 use std::sync::Arc;
-use tokio::join;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::mpsc::UnboundedReceiver;
-use tokio::sync::oneshot;
+
 use tokio::{
-    sync::{mpsc::UnboundedSender, RwLock},
+    join,
+    sync::{
+        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        oneshot, RwLock,
+    },
     task::JoinHandle,
 };
-use zcash_primitives::consensus::BlockHeight;
+use zcash_primitives::{
+    consensus::{self, BlockHeight, BranchId},
+    transaction::Transaction,
+};
 
-use zcash_primitives::transaction::Transaction;
+use crate::compact_formats::RawTransaction;
+use crate::lightwallet::keys::Keystores;
 
-pub struct FetchTaddrTxns {
-    keys: Arc<RwLock<Keys>>,
+pub struct FetchTaddrTxns<P> {
+    keys: Arc<RwLock<Keystores<P>>>,
 }
 
-impl FetchTaddrTxns {
-    pub fn new(keys: Arc<RwLock<Keys>>) -> Self {
+impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
+    pub fn new(keys: Arc<RwLock<Keystores<P>>>) -> Self {
         Self { keys }
     }
 
@@ -32,22 +34,32 @@ impl FetchTaddrTxns {
             oneshot::Sender<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>,
         )>,
         full_tx_scanner: UnboundedSender<(Transaction, BlockHeight)>,
+        network: P,
     ) -> JoinHandle<Result<(), String>> {
         let keys = self.keys.clone();
 
         tokio::spawn(async move {
-            let taddrs = keys.read().await.get_all_taddrs();
+            let taddrs = keys
+                .read()
+                .await
+                .get_all_taddrs()
+                .await
+                .collect::<Vec<_>>();
 
-            // Fetch all transactions for all t-addresses in parallel, and process them in height order
+            // Fetch all transactions for all t-addresses in parallel, and process them in
+            // height order
             let req = (taddrs, start_height, end_height);
             let (res_tx, res_rx) = oneshot::channel::<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>();
-            taddr_fetcher.send((req, res_tx)).unwrap();
+            taddr_fetcher
+                .send((req, res_tx))
+                .unwrap();
 
             let (ordered_rtx_tx, mut ordered_rtx_rx) = unbounded_channel();
 
             // Process every transparent address transaction, in order of height
             let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-                // Now, read the transactions one-at-a-time, and then dispatch them in height order
+                // Now, read the transactions one-at-a-time, and then dispatch them in height
+                // order
                 let mut txns_top = vec![];
 
                 // Fill the array with the first transaction for every taddress
@@ -95,7 +107,7 @@ impl FetchTaddrTxns {
                     }
                 }
 
-                //info!("Finished fetching all t-addr txns");
+                // info!("Finished fetching all t-addr txns");
 
                 Ok(())
             });
@@ -113,13 +125,17 @@ impl FetchTaddrTxns {
                     }
                     prev_height = rtx.height;
 
-                    let tx = Transaction::read(&rtx.data[..]).map_err(|e| format!("Error reading Tx: {}", e))?;
+                    let tx = Transaction::read(
+                        &rtx.data[..],
+                        BranchId::for_height(&network, BlockHeight::from_u32(rtx.height as u32)),
+                    )
+                    .map_err(|e| format!("Error reading Tx: {}", e))?;
                     full_tx_scanner
                         .send((tx, BlockHeight::from_u32(rtx.height as u32)))
                         .unwrap();
                 }
 
-                //info!("Finished scanning all t-addr txns");
+                // info!("Finished scanning all t-addr txns");
                 Ok(())
             });
 
@@ -134,34 +150,39 @@ impl FetchTaddrTxns {
 
 #[cfg(test)]
 mod test {
-    use futures::future::join_all;
-    use rand::Rng;
     use std::sync::Arc;
+
+    use futures::future::try_join_all;
+    use rand::Rng;
     use tokio::join;
     use tokio::sync::mpsc::UnboundedReceiver;
-    use tokio::task::JoinError;
-
-    use tokio::sync::oneshot::{self};
+    use tokio::sync::oneshot;
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::consensus::BlockHeight;
-
-    use crate::compact_formats::RawTransaction;
-    use zcash_primitives::transaction::{Transaction, TransactionData};
-
-    use crate::lightwallet::keys::Keys;
-    use crate::lightwallet::wallettkey::WalletTKey;
+    use zcash_primitives::transaction::Transaction;
 
     use super::FetchTaddrTxns;
+    use crate::compact_formats::RawTransaction;
+    use crate::lightclient::faketx;
+    use crate::lightclient::lightclient_config::UnitTestNetwork;
+    use crate::lightwallet::keys::InMemoryKeys;
+    use crate::lightwallet::wallettkey::WalletTKey;
 
     #[tokio::test]
     async fn out_of_order_txns() {
         // 5 t addresses
-        let mut keys = Keys::new_empty();
-        let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
-        keys.tkeys = gened_taddrs.iter().map(|ta| WalletTKey::empty(ta)).collect::<Vec<_>>();
+        let mut keys = InMemoryKeys::<UnitTestNetwork>::new_empty(UnitTestNetwork);
+        let gened_taddrs: Vec<_> = (0 .. 5)
+            .into_iter()
+            .map(|n| format!("taddr{}", n))
+            .collect();
+        keys.tkeys = gened_taddrs
+            .iter()
+            .map(|ta| WalletTKey::empty(ta))
+            .collect::<Vec<_>>();
 
-        let ftt = FetchTaddrTxns::new(Arc::new(RwLock::new(keys)));
+        let ftt = FetchTaddrTxns::new(Arc::new(RwLock::new(keys.into())));
 
         let (taddr_fetcher_tx, taddr_fetcher_rx) = oneshot::channel::<(
             (Vec<String>, u64, u64),
@@ -184,17 +205,21 @@ mod test {
                     let mut rng = rand::thread_rng();
 
                     // Generate between 50 and 200 txns per taddr
-                    let num_txns = rng.gen_range(50, 200);
+                    let num_txns = rng.gen_range(50 .. 200);
 
-                    let mut rtxs = (0..num_txns)
+                    let mut rtxs = (0 .. num_txns)
                         .into_iter()
-                        .map(|_| rng.gen_range(1, 100))
+                        .map(|_| rng.gen_range(1 .. 100))
                         .map(|h| {
                             let mut rtx = RawTransaction::default();
                             rtx.height = h;
 
                             let mut b = vec![];
-                            TransactionData::new().freeze().unwrap().write(&mut b).unwrap();
+                            faketx::new_transactiondata()
+                                .freeze()
+                                .unwrap()
+                                .write(&mut b)
+                                .unwrap();
                             rtx.data = b;
 
                             rtx
@@ -213,13 +238,11 @@ mod test {
             // Dispatch a set of recievers
             result_tx.send(tx_rs).unwrap();
 
-            let total = join_all(tx_rs_workers)
+            let total = try_join_all(tx_rs_workers)
                 .await
-                .into_iter()
-                .collect::<Result<Vec<i32>, JoinError>>()
-                .map_err(|e| format!("{}", e))?
+                .unwrap()
                 .iter()
-                .sum();
+                .sum::<i32>();
 
             Ok(total)
         });
@@ -238,7 +261,9 @@ mod test {
             Ok(total)
         });
 
-        let h3 = ftt.start(100, 1, taddr_fetcher_tx, full_tx_scanner_tx).await;
+        let h3 = ftt
+            .start(100, 1, taddr_fetcher_tx, full_tx_scanner_tx, UnitTestNetwork)
+            .await;
 
         let (total_sent, total_recieved) = join!(h1, h2);
         assert_eq!(total_sent.unwrap().unwrap(), total_recieved.unwrap().unwrap());

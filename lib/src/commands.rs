@@ -1,27 +1,33 @@
-use crate::lightwallet::MemoDownloadOption;
-use crate::lightwallet::keys::Keys;
-use crate::{lightclient::LightClient, lightwallet::utils};
-use json::object;
-use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::convert::TryInto;
+
+use json::object;
+use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zcash_primitives::consensus::{self};
+
+use crate::lightwallet::keys::Keystores;
+use crate::lightwallet::MemoDownloadOption;
+use crate::{lightclient::LightClient, lightwallet::utils};
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
 }
 
-pub trait Command {
+pub trait Command<P> {
     fn help(&self) -> String;
-
     fn short_help(&self) -> String;
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String;
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String;
 }
 
 struct SyncCommand {}
-impl Command for SyncCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SyncCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Sync the light client with the server");
@@ -36,7 +42,11 @@ impl Command for SyncCommand {
         "Download CompactBlocks and sync to the server".to_string()
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             match lightclient.do_sync(true).await {
                 Ok(j) => j.pretty(2),
@@ -47,7 +57,8 @@ impl Command for SyncCommand {
 }
 
 struct EncryptionStatusCommand {}
-impl Command for EncryptionStatusCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptionStatusCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Check if the wallet is encrypted and if it is locked");
@@ -62,13 +73,23 @@ impl Command for EncryptionStatusCommand {
         "Check if the wallet is encrypted and if it is locked".to_string()
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { lightclient.do_encryption_status().await.pretty(2) })
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
+        RT.block_on(async move {
+            lightclient
+                .do_encryption_status()
+                .await
+                .pretty(2)
+        })
     }
 }
 
 struct SyncStatusCommand {}
-impl Command for SyncStatusCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SyncStatusCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get the sync status of the wallet");
@@ -83,7 +104,11 @@ impl Command for SyncStatusCommand {
         "Get the sync status of the wallet".to_string()
     }
 
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             let status = lightclient.do_sync_status().await;
 
@@ -104,7 +129,7 @@ impl Command for SyncStatusCommand {
             } else {
                 object! {
                     "sync_id" => status.sync_id,
-                    "in_prorgess" => status.in_progress,
+                    "in_progress" => status.in_progress,
                     "last_error" => status.last_error,
                 }
             };
@@ -114,7 +139,8 @@ impl Command for SyncStatusCommand {
 }
 
 struct SendProgressCommand {}
-impl Command for SendProgressCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendProgressCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get the progress of any send transactions that are currently computing");
@@ -127,8 +153,11 @@ impl Command for SendProgressCommand {
     fn short_help(&self) -> String {
         "Get the progress of any send transactions that are currently computing".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             match lightclient.do_send_progress().await {
                 Ok(j) => j.pretty(2),
@@ -139,7 +168,7 @@ impl Command for SendProgressCommand {
 }
 
 struct RescanCommand {}
-impl Command for RescanCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for RescanCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Rescan the wallet, rescanning all blocks for new transactions");
@@ -155,8 +184,11 @@ impl Command for RescanCommand {
     fn short_help(&self) -> String {
         "Rescan the wallet, downloading and scanning all blocks and transactions".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             match lightclient.do_rescan().await {
                 Ok(j) => j.pretty(2),
@@ -167,7 +199,8 @@ impl Command for RescanCommand {
 }
 
 struct ClearCommand {}
-impl Command for ClearCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ClearCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Clear the wallet state, rolling back the wallet to an empty state.");
@@ -182,8 +215,11 @@ impl Command for ClearCommand {
     fn short_help(&self) -> String {
         "Clear the wallet state, rolling back the wallet to an empty state.".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             lightclient.clear_state().await;
 
@@ -194,7 +230,7 @@ impl Command for ClearCommand {
 }
 
 struct HelpCommand {}
-impl Command for HelpCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for HelpCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("List all available commands");
@@ -213,30 +249,36 @@ impl Command for HelpCommand {
         "Lists all available commands".to_string()
     }
 
-    fn exec(&self, args: &[&str], _: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        _client: &LightClient<P>,
+    ) -> String {
         let mut responses = vec![];
 
         // Print a list of all commands
         match args.len() {
             0 => {
                 responses.push(format!("Available commands:"));
-                get_commands().iter().for_each(|(cmd, obj)| {
-                    responses.push(format!("{} - {}", cmd, obj.short_help()));
-                });
+                get_commands::<P>()
+                    .iter()
+                    .for_each(|(cmd, obj)| {
+                        responses.push(format!("{} - {}", cmd, obj.short_help()));
+                    });
 
                 responses.join("\n")
-            }
-            1 => match get_commands().get(args[0]) {
-                Some(cmd) => cmd.help(),
+            },
+            1 => match get_commands::<P>().get(args[0]) {
+                Some(obj) => obj.help(),
                 None => format!("Command {} not found", args[0]),
             },
-            _ => self.help(),
+            _ => Command::<P>::help(self),
         }
     }
 }
 
 struct InfoCommand {}
-impl Command for InfoCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for InfoCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get info about the lightwalletd we're connected to");
@@ -250,14 +292,18 @@ impl Command for InfoCommand {
     fn short_help(&self) -> String {
         "Get the lightwalletd server's info".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move { lightclient.do_info().await })
     }
 }
 
 struct ZecPriceCommand {}
-impl Command for ZecPriceCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ZecPriceCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get the latest ZEC price in the wallet's currency (USD)");
@@ -271,14 +317,18 @@ impl Command for ZecPriceCommand {
     fn short_help(&self) -> String {
         "Get the latest ZEC price in the wallet's currency (USD)".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move { lightclient.do_zec_price().await })
     }
 }
 
 struct LastTxIdCommand {}
-impl Command for LastTxIdCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for LastTxIdCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Show the latest TxId in the wallet");
@@ -291,14 +341,26 @@ impl Command for LastTxIdCommand {
     fn short_help(&self) -> String {
         "Show the latest TxId in the wallet".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_last_txid().await.pretty(2)) })
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .do_last_txid()
+                    .await
+                    .pretty(2)
+            )
+        })
     }
 }
 
 struct BalanceCommand {}
-impl Command for BalanceCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for BalanceCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Show the current ZEC balance in the wallet");
@@ -313,14 +375,17 @@ impl Command for BalanceCommand {
     fn short_help(&self) -> String {
         "Show the current ZEC balance in the wallet".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move { format!("{}", lightclient.do_balance().await.pretty(2)) })
     }
 }
 
 struct AddressCommand {}
-impl Command for AddressCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for AddressCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("List current addresses in the wallet");
@@ -334,14 +399,17 @@ impl Command for AddressCommand {
     fn short_help(&self) -> String {
         "List all addresses in the wallet".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move { format!("{}", lightclient.do_address().await.pretty(2)) })
     }
 }
 
 struct ExportCommand {}
-impl Command for ExportCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ExportCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Export private key for an individual wallet addresses.");
@@ -360,18 +428,17 @@ impl Command for ExportCommand {
     fn short_help(&self) -> String {
         "Export private key for wallet addresses".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() > 1 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         RT.block_on(async move {
-            let address = if args.is_empty() {
-                None
-            } else {
-                Some(args[0].to_string())
-            };
+            let address = if args.is_empty() { None } else { Some(args[0].to_string()) };
             match lightclient.do_export(address).await {
                 Ok(j) => j,
                 Err(e) => object! { "error" => e },
@@ -382,7 +449,7 @@ impl Command for ExportCommand {
 }
 
 struct EncryptCommand {}
-impl Command for EncryptCommand {
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Encrypt the wallet with a password");
@@ -403,10 +470,13 @@ impl Command for EncryptCommand {
     fn short_help(&self) -> String {
         "Encrypt the wallet with a password".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         let passwd = args[0].to_string();
@@ -425,7 +495,8 @@ impl Command for EncryptCommand {
 }
 
 struct DecryptCommand {}
-impl Command for DecryptCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DecryptCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Completely remove wallet encryption, storing the wallet in plaintext on disk");
@@ -447,15 +518,22 @@ impl Command for DecryptCommand {
     fn short_help(&self) -> String {
         "Completely remove wallet encryption".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         let passwd = args[0].to_string();
         RT.block_on(async move {
-            match lightclient.wallet.remove_encryption(passwd).await {
+            match lightclient
+                .wallet
+                .remove_encryption(passwd)
+                .await
+            {
                 Ok(_) => object! { "result" => "success" },
                 Err(e) => object! {
                     "result" => "error",
@@ -468,7 +546,8 @@ impl Command for DecryptCommand {
 }
 
 struct UnlockCommand {}
-impl Command for UnlockCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for UnlockCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Unlock the wallet's encryption in memory, allowing spending from this wallet.");
@@ -488,10 +567,13 @@ impl Command for UnlockCommand {
     fn short_help(&self) -> String {
         "Unlock wallet encryption for spending".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         let passwd = args[0].to_string();
@@ -509,7 +591,8 @@ impl Command for UnlockCommand {
 }
 
 struct LockCommand {}
-impl Command for LockCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for LockCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Lock a wallet that's been temporarily unlocked. You should already have encryption enabled.");
@@ -528,14 +611,17 @@ impl Command for LockCommand {
     fn short_help(&self) -> String {
         "Lock a wallet that's been temporarily unlocked".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 0 {
             let mut h = vec![];
             h.push("Extra arguments to lock. Did you mean 'encrypt'?");
             h.push("");
 
-            return format!("{}\n{}", h.join("\n"), self.help());
+            return format!("{}\n{}", h.join("\n"), Command::<P>::help(self));
         }
 
         RT.block_on(async move {
@@ -552,7 +638,8 @@ impl Command for LockCommand {
 }
 
 struct ShieldCommand {}
-impl Command for ShieldCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ShieldCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Shield all your transparent funds");
@@ -570,22 +657,21 @@ impl Command for ShieldCommand {
     fn short_help(&self) -> String {
         "Shield your transparent ZEC into a sapling address".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         // Parse the address or amount
-        let address = if args.len() > 0 {
-            Some(args[0].to_string())
-        } else {
-            None
-        };
+        let address = if args.len() > 0 { Some(args[0].to_string()) } else { None };
         RT.block_on(async move {
             match lightclient.do_shield(address).await {
                 Ok(txid) => {
                     object! { "txid" => txid }
-                }
+                },
                 Err(e) => {
                     object! { "error" => e }
-                }
+                },
             }
             .pretty(2)
         })
@@ -593,7 +679,8 @@ impl Command for ShieldCommand {
 }
 
 struct EncryptMessageCommand {}
-impl Command for EncryptMessageCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptMessageCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Encrypt a memo to be sent to a z-address offline");
@@ -613,10 +700,13 @@ impl Command for EncryptMessageCommand {
     fn short_help(&self) -> String {
         "Encrypt a memo to be sent to a z-address offline".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() < 1 || args.len() > 3 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         // Check for a single argument that can be parsed as JSON
@@ -626,20 +716,23 @@ impl Command for EncryptMessageCommand {
                 Ok(j) => j,
                 Err(e) => {
                     let es = format!("Couldn't understand JSON: {}", e);
-                    return format!("{}\n{}", es, self.help());
-                }
+                    return format!("{}\n{}", es, Command::<P>::help(self));
+                },
             };
 
             if !j.has_key("address") || !j.has_key("memo") {
                 let es = format!("Need 'address' and 'memo'\n");
-                return format!("{}\n{}", es, self.help());
+                return format!("{}\n{}", es, Command::<P>::help(self));
             }
 
             let memo = utils::interpret_memo_string(j["memo"].as_str().unwrap().to_string());
             if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
+                return format!("{}\n{}", memo.err().unwrap(), Command::<P>::help(self));
             }
-            let to = j["address"].as_str().unwrap().to_string();
+            let to = j["address"]
+                .as_str()
+                .unwrap()
+                .to_string();
 
             (to, memo.unwrap())
         } else if args.len() == 2 {
@@ -647,16 +740,18 @@ impl Command for EncryptMessageCommand {
 
             let memo = utils::interpret_memo_string(args[1].to_string());
             if memo.is_err() {
-                return format!("{}\n{}", memo.err().unwrap(), self.help());
+                return format!("{}\n{}", memo.err().unwrap(), Command::<P>::help(self));
             }
 
             (to, memo.unwrap())
         } else {
-            return format!("Wrong number of arguments. Was expecting 1 or 2\n{}", self.help());
+            return format!("Wrong number of arguments. Was expecting 1 or 2\n{}", Command::<P>::help(self));
         };
 
         if let Ok(m) = memo.try_into() {
-            lightclient.do_encrypt_message(to, m).pretty(2)
+            lightclient
+                .do_encrypt_message(to, m)
+                .pretty(2)
         } else {
             return format!("Couldn't encode memo");
         }
@@ -664,7 +759,8 @@ impl Command for EncryptMessageCommand {
 }
 
 struct DecryptMessageCommand {}
-impl Command for DecryptMessageCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DecryptMessageCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Attempt to decrypt a message with all the view keys in the wallet.");
@@ -681,18 +777,27 @@ impl Command for DecryptMessageCommand {
     fn short_help(&self) -> String {
         "Attempt to decrypt a message with all the view keys in the wallet.".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
-        RT.block_on(async move { lightclient.do_decrypt_message(args[0].to_string()).await.pretty(2) })
+        RT.block_on(async move {
+            lightclient
+                .do_decrypt_message(args[0].to_string())
+                .await
+                .pretty(2)
+        })
     }
 }
 
 struct SendCommand {}
-impl Command for SendCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Send ZEC to a given address(es)");
@@ -712,13 +817,17 @@ impl Command for SendCommand {
     fn short_help(&self) -> String {
         "Send ZEC to the given address".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         // Parse the args. There are two argument types.
-        // 1 - A set of 2(+1 optional) arguments for a single address send representing address, value, memo?
-        // 2 - A single argument in the form of a JSON string that is "[{address: address, value: value, memo: memo},...]"
+        // 1 - A set of 2(+1 optional) arguments for a single address send representing
+        // address, value, memo? 2 - A single argument in the form of a JSON
+        // string that is "[{address: address, value: value, memo: memo},...]"
         if args.len() < 1 || args.len() > 3 {
-            return self.help();
+            return Command::<P>::help(self);
         }
 
         RT.block_on(async move {
@@ -730,16 +839,18 @@ impl Command for SendCommand {
                     Ok(j) => j,
                     Err(e) => {
                         let es = format!("Couldn't understand JSON: {}", e);
-                        return format!("{}\n{}", es, self.help());
-                    }
+                        return format!("{}\n{}", es, Command::<P>::help(self));
+                    },
                 };
 
                 if !json_args.is_array() {
-                    return format!("Couldn't parse argument as array\n{}", self.help());
+                    return format!("Couldn't parse argument as array\n{}", Command::<P>::help(self));
                 }
 
-                let fee = u64::from(DEFAULT_FEE);
-                let all_zbalance = lightclient.wallet.verified_zbalance(None).await.checked_sub(fee);
+                let all_zbalance = lightclient
+                    .wallet
+                    .verified_zbalance(None)
+                    .await;
 
                 let maybe_send_args = json_args
                     .members()
@@ -747,19 +858,22 @@ impl Command for SendCommand {
                         if !j.has_key("address") || !j.has_key("amount") {
                             Err(format!("Need 'address' and 'amount'\n"))
                         } else {
-                            let amount = match j["amount"].as_str() {
+                            let amt = match j["amount"].as_str() {
                                 Some("entire-verified-zbalance") => all_zbalance,
-                                _ => Some(j["amount"].as_u64().unwrap()),
+                                _ => j["amount"].as_u64().unwrap(),
                             };
 
-                            match amount {
-                                Some(amt) => Ok((
-                                    j["address"].as_str().unwrap().to_string().clone(),
-                                    amt,
-                                    j["memo"].as_str().map(|s| s.to_string().clone()),
-                                )),
-                                None => Err(format!("Not enough in wallet to pay transaction fee of {}", fee)),
-                            }
+                            Ok((
+                                j["address"]
+                                    .as_str()
+                                    .unwrap()
+                                    .to_string()
+                                    .clone(),
+                                amt,
+                                j["memo"]
+                                    .as_str()
+                                    .map(|s| s.to_string().clone()),
+                            ))
                         }
                     })
                     .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
@@ -767,8 +881,8 @@ impl Command for SendCommand {
                 match maybe_send_args {
                     Ok(a) => a.clone(),
                     Err(s) => {
-                        return format!("Error: {}\n{}", s, self.help());
-                    }
+                        return format!("Error: {}\n{}", s, Command::<P>::help(self));
+                    },
                 }
             } else if args.len() == 2 || args.len() == 3 {
                 let address = args[0].to_string();
@@ -778,31 +892,26 @@ impl Command for SendCommand {
                     Ok(amt) => amt,
                     Err(e) => {
                         if args[1] == "entire-verified-zbalance" {
-                            let fee = u64::from(DEFAULT_FEE);
-                            match lightclient.wallet.verified_zbalance(None).await.checked_sub(fee) {
-                                Some(amt) => amt,
-                                None => return format!("Not enough in wallet to pay transaction fee of {}", fee),
-                            }
+                            lightclient
+                                .wallet
+                                .verified_zbalance(None)
+                                .await
                         } else {
                             return format!("Couldn't parse amount: {}", e);
                         }
-                    }
+                    },
                 };
 
-                let memo = if args.len() == 3 {
-                    Some(args[2].to_string())
-                } else {
-                    None
-                };
+                let memo = if args.len() == 3 { Some(args[2].to_string()) } else { None };
 
                 // Memo has to be None if not sending to a shileded address
-                if memo.is_some() && !Keys::is_shielded_address(&address, &lightclient.config) {
+                if memo.is_some() && !Keystores::is_shielded_address(&address, &lightclient.config.get_params()) {
                     return format!("Can't send a memo to the non-shielded address {}", address);
                 }
 
                 vec![(args[0].to_string(), value, memo)]
             } else {
-                return self.help();
+                return Command::<P>::help(self);
             };
 
             // Convert to the right format. String -> &str.
@@ -813,10 +922,10 @@ impl Command for SendCommand {
             match lightclient.do_send(tos).await {
                 Ok(txid) => {
                     object! { "txid" => txid }
-                }
+                },
                 Err(e) => {
                     object! { "error" => e }
-                }
+                },
             }
             .pretty(2)
         })
@@ -824,7 +933,8 @@ impl Command for SendCommand {
 }
 
 struct SaveCommand {}
-impl Command for SaveCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SaveCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Save the wallet to disk");
@@ -840,28 +950,32 @@ impl Command for SaveCommand {
     fn short_help(&self) -> String {
         "Save wallet file to disk".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
-            match lightclient.do_save().await {
+            match lightclient.do_save(true).await {
                 Ok(_) => {
                     let r = object! { "result" => "success" };
                     r.pretty(2)
-                }
+                },
                 Err(e) => {
                     let r = object! {
                         "result" => "error",
                         "error" => e
                     };
                     r.pretty(2)
-                }
+                },
             }
         })
     }
 }
 
 struct SeedCommand {}
-impl Command for SeedCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SeedCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Show the wallet's seed phrase");
@@ -876,8 +990,11 @@ impl Command for SeedCommand {
     fn short_help(&self) -> String {
         "Display the seed phrase".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
             match lightclient.do_seed_phrase().await {
                 Ok(j) => j,
@@ -889,7 +1006,8 @@ impl Command for SeedCommand {
 }
 
 struct TransactionsCommand {}
-impl Command for TransactionsCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for TransactionsCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("List all incoming and outgoing transactions from this wallet");
@@ -904,29 +1022,41 @@ impl Command for TransactionsCommand {
     fn short_help(&self) -> String {
         "List all transactions in the wallet".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() > 1 {
-            return format!("Didn't understand arguments\n{}", self.help());
+            return format!("Didn't understand arguments\n{}", Command::<P>::help(self));
         }
 
         let include_memo_hex = if args.len() == 1 {
             if args[0] == "allmemos" || args[0] == "true" || args[0] == "yes" {
                 true
             } else {
-                return format!("Couldn't understand first argument '{}'\n{}", args[0], self.help());
+                return format!("Couldn't understand first argument '{}'\n{}", args[0], Command::<P>::help(self));
             }
         } else {
             false
         };
 
-        RT.block_on(async move { format!("{}", lightclient.do_list_transactions(include_memo_hex).await.pretty(2)) })
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .do_list_transactions(include_memo_hex)
+                    .await
+                    .pretty(2)
+            )
+        })
     }
 }
 
 struct SetOptionCommand {}
-impl Command for SetOptionCommand {
-    fn help(&self) -> String  {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SetOptionCommand {
+    fn help(&self) -> String {
         let mut h = vec![];
         h.push("Set a wallet option");
         h.push("Usage:");
@@ -940,15 +1070,18 @@ impl Command for SetOptionCommand {
     fn short_help(&self) -> String {
         "Set a wallet option".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+            return format!("Error: Need exactly 1 argument\n\n{}", Command::<P>::help(self));
         }
 
         let option = args[0];
         let values: Vec<&str> = option.split("=").collect();
-        
+
         if values.len() != 2 {
             return format!("Error: Please set option value like: <optionname>=<optionvalue>");
         }
@@ -958,30 +1091,50 @@ impl Command for SetOptionCommand {
 
         RT.block_on(async move {
             match option_name {
-                "download_memos" => {
-                    match option_value {
-                        "none" => lightclient.wallet.set_download_memo(MemoDownloadOption::NoMemos).await,
-                        "wallet" => lightclient.wallet.set_download_memo(MemoDownloadOption::WalletMemos).await,
-                        "all" => lightclient.wallet.set_download_memo(MemoDownloadOption::AllMemos).await,
-                        _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
-                    }
+                "download_memos" => match option_value {
+                    "none" => {
+                        lightclient
+                            .wallet
+                            .set_download_memo(MemoDownloadOption::NoMemos)
+                            .await
+                    },
+                    "wallet" => {
+                        lightclient
+                            .wallet
+                            .set_download_memo(MemoDownloadOption::WalletMemos)
+                            .await
+                    },
+                    "all" => {
+                        lightclient
+                            .wallet
+                            .set_download_memo(MemoDownloadOption::AllMemos)
+                            .await
+                    },
+                    _ => return format!("Error: Couldn't understand {} value {}", option_name, option_value),
+                },
+                "spam_filter_threshold" => {
+                    let threshold = option_value.parse::<i64>().unwrap();
+                    lightclient
+                        .wallet
+                        .set_spam_filter_threshold(threshold)
+                        .await
                 },
                 _ => return format!("Error: Couldn't understand {}", option_name),
             }
-    
-            let r = object!{
+
+            let r = object! {
                 "success" => true
             };
-    
+
             r.pretty(2)
         })
     }
 }
 
-
 struct GetOptionCommand {}
-impl Command for GetOptionCommand {
-    fn help(&self) -> String  {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for GetOptionCommand {
+    fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get a wallet option");
         h.push("Usage:");
@@ -993,26 +1146,42 @@ impl Command for GetOptionCommand {
     fn short_help(&self) -> String {
         "Get a wallet option".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return format!("Error: Need exactly 1 argument\n\n{}", self.help());
+            return format!("Error: Need exactly 1 argument\n\n{}", Command::<P>::help(self));
         }
 
         let option_name = args[0];
 
         RT.block_on(async move {
             let value = match option_name {
-                "download_memos" => 
-                    match lightclient.wallet.wallet_options.read().await.download_memos {
-                        MemoDownloadOption::NoMemos => "none",
-                        MemoDownloadOption::WalletMemos => "wallet",
-                        MemoDownloadOption::AllMemos => "all"
-                    },
+                "download_memos" => match lightclient
+                    .wallet
+                    .wallet_options
+                    .read()
+                    .await
+                    .download_memos
+                {
+                    MemoDownloadOption::NoMemos => "none",
+                    MemoDownloadOption::WalletMemos => "wallet",
+                    MemoDownloadOption::AllMemos => "all",
+                }
+                .to_string(),
+                "spam_filter_threshold" => lightclient
+                    .wallet
+                    .wallet_options
+                    .read()
+                    .await
+                    .spam_threshold
+                    .to_string(),
                 _ => return format!("Error: Couldn't understand {}", option_name),
             };
 
-            let r = object!{
+            let r = object! {
                 option_name => value
             };
 
@@ -1022,7 +1191,8 @@ impl Command for GetOptionCommand {
 }
 
 struct ImportCommand {}
-impl Command for ImportCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ImportCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Import an external spending or viewing key into the wallet");
@@ -1040,10 +1210,13 @@ impl Command for ImportCommand {
     fn short_help(&self) -> String {
         "Import spending or viewing keys into the wallet".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() == 0 || args.len() > 3 {
-            return format!("Insufficient arguments\n\n{}", self.help());
+            return format!("Insufficient arguments\n\n{}", Command::<P>::help(self));
         }
 
         let (key, birthday, rescan) = if args.len() == 1 {
@@ -1052,40 +1225,42 @@ impl Command for ImportCommand {
                 Ok(j) => j,
                 Err(e) => {
                     let es = format!("Couldn't understand JSON: {}", e);
-                    return format!("{}\n{}", es, self.help());
-                }
+                    return format!("{}\n{}", es, Command::<P>::help(self));
+                },
             };
 
             if !json_args.is_object() {
-                return format!("Couldn't parse argument as a JSON object\n{}", self.help());
+                return format!("Couldn't parse argument as a JSON object\n{}", Command::<P>::help(self));
             }
 
             if !json_args.has_key("key") {
                 return format!(
                     "'key' field is required in the JSON, containing the spending or viewing key to import\n{}",
-                    self.help()
+                    Command::<P>::help(self)
                 );
             }
 
             if !json_args.has_key("birthday") {
-                return format!("'birthday' field is required in the JSON, containing the birthday of the spending or viewing key\n{}", self.help());
+                return format!("'birthday' field is required in the JSON, containing the birthday of the spending or viewing key\n{}",Command::<P>::help(self));
             }
 
             (
-                json_args["key"].as_str().unwrap().to_string(),
+                json_args["key"]
+                    .as_str()
+                    .unwrap()
+                    .to_string(),
                 json_args["birthday"].as_u64().unwrap(),
-                !json_args["norescan"].as_bool().unwrap_or(false),
+                !json_args["norescan"]
+                    .as_bool()
+                    .unwrap_or(false),
             )
         } else {
             let key = args[0];
             let birthday = match args[1].parse::<u64>() {
                 Ok(b) => b,
                 Err(_) => {
-                    return format!(
-                        "Couldn't parse {} as birthday. Please specify an integer. Ok to use '0'",
-                        args[1]
-                    )
-                }
+                    return format!("Couldn't parse {} as birthday. Please specify an integer. Ok to use '0'", args[1])
+                },
             };
 
             let rescan = if args.len() == 3 {
@@ -1105,14 +1280,17 @@ impl Command for ImportCommand {
         };
 
         RT.block_on(async move {
-            let r = match lightclient.do_import_key(key, birthday).await {
+            let r = match lightclient
+                .do_import_key(key, birthday)
+                .await
+            {
                 Ok(r) => r.pretty(2),
                 Err(e) => return format!("Error: {}", e),
             };
 
             if rescan {
                 match lightclient.do_rescan().await {
-                    Ok(_) => {}
+                    Ok(_) => {},
                     Err(e) => return format!("Error: Rescan failed: {}", e),
                 };
             }
@@ -1123,7 +1301,8 @@ impl Command for ImportCommand {
 }
 
 struct HeightCommand {}
-impl Command for HeightCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for HeightCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Get the latest block height that the wallet is at.");
@@ -1138,22 +1317,23 @@ impl Command for HeightCommand {
     fn short_help(&self) -> String {
         "Get the latest block height that the wallet is at".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
-            format!(
-                "{}",
-                object! { "height" => lightclient.wallet.last_scanned_height().await}.pretty(2)
-            )
+            format!("{}", object! { "height" => lightclient.wallet.last_scanned_height().await}.pretty(2))
         })
     }
 }
 
 struct DefaultFeeCommand {}
-impl Command for DefaultFeeCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFeeCommand {
     fn help(&self) -> String {
         let mut h = vec![];
-        h.push("Returns the default fee in zats for outgoing transactions");
+        h.push("Returns the minimum fee in zats for outgoing transactions");
         h.push("Usage:");
         h.push("defaultfee <optional_block_height>");
         h.push("");
@@ -1163,23 +1343,28 @@ impl Command for DefaultFeeCommand {
     }
 
     fn short_help(&self) -> String {
-        "Returns the default fee in zats for outgoing transactions".to_string()
+        "Returns the minumum fee in zats for outgoing transactions".to_string()
     }
-
-    fn exec(&self, args: &[&str], _lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        client: &LightClient<P>,
+    ) -> String {
         if args.len() > 1 {
-            return format!("Was expecting at most 1 argument\n{}", self.help());
+            return format!("Was expecting at most 1 argument\n{}", Command::<P>::help(self));
         }
 
         RT.block_on(async move {
-            let j = object! { "defaultfee" => u64::from(DEFAULT_FEE)};
+            let fee = client.wallet.fee(0, 0, 0, 0, 0);
+            let j = object! { "defaultfee" => fee };
             j.pretty(2)
         })
     }
 }
 
 struct NewAddressCommand {}
-impl Command for NewAddressCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NewAddressCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Create a new address in this wallet");
@@ -1195,14 +1380,20 @@ impl Command for NewAddressCommand {
     fn short_help(&self) -> String {
         "Create a new address in this wallet".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         if args.len() != 1 {
-            return format!("No address type specified\n{}", self.help());
+            return format!("No address type specified\n{}", Command::<P>::help(self));
         }
 
         RT.block_on(async move {
-            match lightclient.do_new_address(args[0]).await {
+            match lightclient
+                .do_new_address(args[0])
+                .await
+            {
                 Ok(j) => j,
                 Err(e) => object! { "error" => e },
             }
@@ -1212,7 +1403,8 @@ impl Command for NewAddressCommand {
 }
 
 struct NotesCommand {}
-impl Command for NotesCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NotesCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Show all sapling notes and utxos in this wallet");
@@ -1229,11 +1421,14 @@ impl Command for NotesCommand {
     fn short_help(&self) -> String {
         "List all sapling notes and utxos in the wallet".to_string()
     }
-
-    fn exec(&self, args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         // Parse the args.
         if args.len() > 1 {
-            return self.short_help();
+            return Command::<P>::short_help(self);
         }
 
         // Make sure we can parse the amount
@@ -1246,12 +1441,21 @@ impl Command for NotesCommand {
             false
         };
 
-        RT.block_on(async move { format!("{}", lightclient.do_list_notes(all_notes).await.pretty(2)) })
+        RT.block_on(async move {
+            format!(
+                "{}",
+                lightclient
+                    .do_list_notes(all_notes)
+                    .await
+                    .pretty(2)
+            )
+        })
     }
 }
 
 struct QuitCommand {}
-impl Command for QuitCommand {
+
+impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for QuitCommand {
     fn help(&self) -> String {
         let mut h = vec![];
         h.push("Save the wallet to disk and quit");
@@ -1265,10 +1469,13 @@ impl Command for QuitCommand {
     fn short_help(&self) -> String {
         "Quit the lightwallet, saving state to disk".to_string()
     }
-
-    fn exec(&self, _args: &[&str], lightclient: &LightClient) -> String {
+    fn exec(
+        &self,
+        _args: &[&str],
+        lightclient: &LightClient<P>,
+    ) -> String {
         RT.block_on(async move {
-            match lightclient.do_save().await {
+            match lightclient.do_save(true).await {
                 Ok(_) => "".to_string(),
                 Err(e) => e,
             }
@@ -1276,8 +1483,8 @@ impl Command for QuitCommand {
     }
 }
 
-pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
-    let mut map: HashMap<String, Box<dyn Command>> = HashMap::new();
+pub fn get_commands<P: consensus::Parameters + Send + Sync + 'static>() -> Box<HashMap<String, Box<dyn Command<P>>>> {
+    let mut map: HashMap<String, Box<dyn Command<P>>> = HashMap::new();
 
     map.insert("sync".to_string(), Box::new(SyncCommand {}));
     map.insert("syncstatus".to_string(), Box::new(SyncStatusCommand {}));
@@ -1292,8 +1499,8 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     map.insert("addresses".to_string(), Box::new(AddressCommand {}));
     map.insert("height".to_string(), Box::new(HeightCommand {}));
     map.insert("sendprogress".to_string(), Box::new(SendProgressCommand {}));
-    map.insert("setoption".to_string(), Box::new(SetOptionCommand{}));
-    map.insert("getoption".to_string(), Box::new(GetOptionCommand{}));
+    map.insert("setoption".to_string(), Box::new(SetOptionCommand {}));
+    map.insert("getoption".to_string(), Box::new(GetOptionCommand {}));
     map.insert("import".to_string(), Box::new(ImportCommand {}));
     map.insert("export".to_string(), Box::new(ExportCommand {}));
     map.insert("info".to_string(), Box::new(InfoCommand {}));
@@ -1315,7 +1522,11 @@ pub fn get_commands() -> Box<HashMap<String, Box<dyn Command>>> {
     Box::new(map)
 }
 
-pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -> String {
+pub fn do_user_command<P: consensus::Parameters + Send + Sync + 'static>(
+    cmd: &str,
+    args: &Vec<&str>,
+    lightclient: &LightClient<P>,
+) -> String {
     match get_commands().get(&cmd.to_ascii_lowercase()) {
         Some(cmd) => cmd.exec(args, lightclient),
         None => format!("Unknown command : {}. Type 'help' for a list of commands", cmd),
@@ -1324,10 +1535,14 @@ pub fn do_user_command(cmd: &str, args: &Vec<&str>, lightclient: &LightClient) -
 
 #[cfg(test)]
 pub mod tests {
-    use super::do_user_command;
-    use crate::lightclient::{lightclient_config::LightClientConfig, LightClient};
     use lazy_static::lazy_static;
     use tokio::runtime::Runtime;
+
+    use super::do_user_command;
+    use crate::lightclient::{
+        lightclient_config::{LightClientConfig, UnitTestNetwork},
+        LightClient,
+    };
 
     lazy_static! {
         static ref TEST_SEED: String = "youth strong sweet gorilla hammer unhappy congress stamp left stereo riot salute road tag clean toilet artefact fork certain leopard entire civil degree wonder".to_string();
@@ -1337,20 +1552,14 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &LightClientConfig::create_unconnected("main".to_string(), None),
+                &LightClientConfig::create_unconnected(UnitTestNetwork, None),
                 Some(TEST_SEED.to_string()),
                 0,
             ))
             .unwrap();
 
-        assert_eq!(
-            do_user_command("addresses", &vec![], &lc),
-            do_user_command("AddReSSeS", &vec![], &lc)
-        );
-        assert_eq!(
-            do_user_command("addresses", &vec![], &lc),
-            do_user_command("Addresses", &vec![], &lc)
-        );
+        assert_eq!(do_user_command("addresses", &vec![], &lc), do_user_command("AddReSSeS", &vec![], &lc));
+        assert_eq!(do_user_command("addresses", &vec![], &lc), do_user_command("Addresses", &vec![], &lc));
     }
 
     #[test]

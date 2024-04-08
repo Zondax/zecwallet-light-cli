@@ -1,33 +1,49 @@
-use crate::{compact_formats::CompactBlock, lightwallet::{MemoDownloadOption, data::WalletTx, keys::Keys, wallet_txns::WalletTxns}};
+use std::sync::Arc;
+
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-use std::sync::Arc;
-use tokio::{sync::{RwLock, mpsc::{unbounded_channel, UnboundedSender}, oneshot}, task::JoinHandle};
-
-use zcash_primitives::{consensus::BlockHeight, note_encryption::try_sapling_compact_note_decryption, primitives::{Nullifier, SaplingIvk}, transaction::{Transaction, TxId}};
+use tokio::{
+    sync::{
+        mpsc::{channel, Sender, UnboundedSender},
+        oneshot, RwLock,
+    },
+    task::JoinHandle,
+};
+use zcash_primitives::{
+    consensus::{self, BlockHeight},
+    sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
+    transaction::{Transaction, TxId},
+};
 
 use super::syncdata::BlazeSyncData;
+use crate::{
+    compact_formats::CompactBlock,
+    lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
+};
 
-pub struct TrialDecryptions {
-    keys: Arc<RwLock<Keys>>,
+pub struct TrialDecryptions<P> {
+    keys: Arc<RwLock<Keystores<P>>>,
     wallet_txns: Arc<RwLock<WalletTxns>>,
 }
 
-impl TrialDecryptions {
-    pub fn new(keys: Arc<RwLock<Keys>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
+    pub fn new(
+        keys: Arc<RwLock<Keystores<P>>>,
+        wallet_txns: Arc<RwLock<WalletTxns>>,
+    ) -> Self {
         Self { keys, wallet_txns }
     }
 
     pub async fn start(
         &self,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Option<Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
-    ) -> (JoinHandle<()>, UnboundedSender<CompactBlock>) {
-        //info!("Starting trial decrptions processor");
+    ) -> (JoinHandle<Result<(), String>>, Sender<CompactBlock>) {
+        // info!("Starting trial decrptions processor");
 
-        // Create a new channel where we'll receive the blocks
-        let (tx, mut rx) = unbounded_channel::<CompactBlock>();
+        // Create a new channel where we'll receive the blocks. only 64 in the queue
+        let (tx, mut rx) = channel::<CompactBlock>(64);
 
         let keys = self.keys.clone();
         let wallet_txns = self.wallet_txns.clone();
@@ -39,16 +55,16 @@ impl TrialDecryptions {
             let ivks = Arc::new(
                 keys.read()
                     .await
-                    .zkeys
-                    .iter()
-                    .map(|zk| zk.extfvk().fvk.vk.ivk())
+                    .get_all_ivks()
+                    .await
                     .collect::<Vec<_>>(),
             );
 
             while let Some(cb) = rx.recv().await {
+                // println!("trial_witness recieved {:?}", cb.height);
                 cbs.push(cb);
 
-                if cbs.len() >= 1_000 {
+                if cbs.len() >= 50 {
                     let keys = keys.clone();
                     let ivks = ivks.clone();
                     let wallet_txns = wallet_txns.clone();
@@ -78,10 +94,15 @@ impl TrialDecryptions {
             )));
 
             while let Some(r) = workers.next().await {
-                r.unwrap().unwrap();
+                match r {
+                    Ok(Ok(_)) => (),
+                    Ok(Err(s)) => return Err(s),
+                    Err(e) => return Err(e.to_string()),
+                };
             }
 
-            //info!("Finished final trial decryptions");
+            // info!("Finished final trial decryptions");
+            Ok(())
         });
 
         return (h, tx);
@@ -89,41 +110,40 @@ impl TrialDecryptions {
 
     async fn trial_decrypt_batch(
         cbs: Vec<CompactBlock>,
-        keys: Arc<RwLock<Keys>>,
+        keys: Arc<RwLock<Keystores<P>>>,
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         ivks: Arc<Vec<SaplingIvk>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
-        detected_txid_sender: UnboundedSender<(TxId, Nullifier, BlockHeight, Option<u32>)>,
+        detected_txid_sender: Sender<(TxId, Option<Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
+        // println!("Starting batch at {}", temp_start);
         let config = keys.read().await.config().clone();
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
 
-        let download_memos = bsync_data.read().await.wallet_options.download_memos;
+        let download_memos = bsync_data
+            .read()
+            .await
+            .wallet_options
+            .download_memos;
 
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
 
             for (tx_num, ctx) in cb.vtx.iter().enumerate() {
                 let mut wallet_tx = false;
-                
-                for (output_num, co) in ctx.outputs.iter().enumerate() {
-                    let cmu = co.cmu().map_err(|_| "No CMU".to_string())?;
-                    let epk = match co.epk() {
-                        Err(_) => continue,
-                        Ok(epk) => epk,
-                    };
 
-                    for (i, ivk) in ivks.iter().enumerate() {
-                        if let Some((note, to)) = try_sapling_compact_note_decryption(
-                            &config.get_params(),
-                            height,
-                            &ivk,
-                            &epk,
-                            &cmu,
-                            &co.ciphertext,
-                        ) {
+                if !(ctx.outputs.len() > 0 && ctx.outputs[0].epk.len() > 0 && ctx.outputs[0].ciphertext.len() > 0) {
+                    continue;
+                }
+
+                for (output_num, co) in ctx.outputs.iter().enumerate() {
+                    for (_, ivk) in ivks.iter().enumerate() {
+                        if let Some((note, to)) =
+                            try_sapling_compact_note_decryption(&config.get_params(), height, &ivk, co)
+                        {
+                            let ivk = SaplingIvk(ivk.0);
                             wallet_tx = true;
 
                             let keys = keys.clone();
@@ -135,8 +155,7 @@ impl TrialDecryptions {
 
                             workers.push(tokio::spawn(async move {
                                 let keys = keys.read().await;
-                                let extfvk = keys.zkeys[i].extfvk();
-                                let have_spending_key = keys.have_spending_key(extfvk);
+                                let have_spending_key = keys.have_spending_key(&ivk).await;
                                 let uri = bsync_data.read().await.uri().clone();
 
                                 // Get the witness for the note
@@ -148,31 +167,35 @@ impl TrialDecryptions {
                                     .await?;
 
                                 let txid = WalletTx::new_txid(&ctx.hash);
-                                let nullifier = note.nf(&extfvk.fvk.vk, witness.position() as u64);
+                                let nullifier = keys
+                                    .get_note_nullifier(&ivk, witness.position() as u64, &note)
+                                    .await?;
 
-                                wallet_txns.write().await.add_new_note(
-                                    txid.clone(),
-                                    height,
-                                    false,
-                                    timestamp,
-                                    note,
-                                    to,
-                                    &extfvk,
-                                    have_spending_key,
-                                    witness,
-                                );
+                                wallet_txns
+                                    .write()
+                                    .await
+                                    .add_new_sapling_note(
+                                        txid.clone(),
+                                        height,
+                                        false,
+                                        timestamp,
+                                        note,
+                                        to,
+                                        &ivk,
+                                        nullifier,
+                                        have_spending_key,
+                                        witness,
+                                    );
 
                                 info!("Trial decrypt Detected txid {}", &txid);
-                                
+
                                 detected_txid_sender
-                                    .send((txid, nullifier, height, Some(output_num as u32)))
+                                    .send((txid, Some(nullifier), height, Some(output_num as u32)))
+                                    .await
                                     .unwrap();
 
                                 Ok::<_, String>(())
                             }));
-
-                            // No need to try the other ivks if we found one
-                            break;
                         }
                     }
                 }
@@ -187,7 +210,6 @@ impl TrialDecryptions {
                         // Discard the result, because this was not a wallet tx.
                         rx.await.unwrap().map(|_r| ())
                     }));
-                    
                 }
             }
         }
@@ -197,9 +219,16 @@ impl TrialDecryptions {
         }
 
         // Update sync status
-        bsync_data.read().await.sync_status.write().await.trial_dec_done += blk_count as u64;
+        bsync_data
+            .read()
+            .await
+            .sync_status
+            .write()
+            .await
+            .trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
+        // println!("Finished batch at {}", temp_start);
         Ok::<(), String>(())
     }
 }

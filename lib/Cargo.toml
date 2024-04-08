@@ -7,54 +7,70 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["embed_params"]
+default = ["embed_params", "ledger-support"]
+hsm-compat = ["zcash-hsmbuilder"]
+ledger-support = ["hsm-compat", "ledger-zcash", "ledger-transport-hid",
+                    "ledger-transport", "zx-bip44", "bytemuck"]
 embed_params = []
-
 
 [dependencies]
 arr_macro = "0.1.3"
 base64 = "0.13.0"
 bytes = "0.4"
-log4rs = "1.0.0"
-rand = "0.7.3"
+log4rs = "1.2.0"
+rand = "0.8.5"
 http = "0.2.4"
-tonic = {version = "0.4.3", features = ["tls", "tls-roots"]}
-prost = "0.7.0"
-tokio =  { version = "1.6.0", features = ["full"] }
-tokio-stream = "0.1.6"
-tokio-rustls = "0.22.0"
-futures = "0.3.15"
+tonic = {version = "0.7.2", features = ["tls", "tls-roots"]}
+prost = "0.10.4"
+tokio =  { version = "1.20.0", features = ["full"] }
+tokio-stream = "0.1.9"
+tokio-rustls = "0.23.4"
+futures = "0.3.21"
 log = "0.4.14"
+hmac = "0.11"
 hex = "0.3"
-ring = "0.16.20"
 dirs = "3.0.2"
 json = "0.12.4"
 webpki-roots = "0.21.0"
+async-trait = "0.1.53"
 
 lazy_static = "1.4.0"
-secp256k1 = "=0.20.2"
+secp256k1 = "=0.21.3"
 ripemd160 = "0.9.1"
 sha2 = "0.9.5"
 base58 = "0.1.0"
-tiny-bip39 = "0.8.0"
+tiny-bip39 = "1"
 sodiumoxide = "0.2.5"
 byteorder = "1"
+thiserror = "1.0.31"
+cfg-if = "1.0.0"
 
-pairing = "0.18.0"
-ff = "0.8"
-jubjub = "0.5.1"
-bls12_381 = "0.3.1"
-group = "0.8"
+pairing = "0.22"
+ff = "0.12"
+jubjub = "0.9.0"
+bls12_381 = "0.7"
+group = "0.12"
 
-rust-embed = { version = "5.1.0", features = ["debug-embed"] }
+rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 
-zcash_primitives = { git = "https://github.com/adityapk00/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee", features = ["transparent-inputs"] }
-zcash_client_backend = { git = "https://github.com/adityapk00/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee"}
-zcash_proofs = { git = "https://github.com/adityapk00/librustzcash", rev = "adeb3ec4ad15480482bc2962bc9fe453814db9ee", features = ["multicore"]}
+zcash_primitives = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481", features = ["transparent-inputs"], package = "zcash_primitives" }
+zcash_client_backend = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481"}
+zcash_proofs = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481", features = ["multicore"]}
+zcash_encoding = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481",  package = "zcash_encoding" }
+zcash_note_encryption = { git = "https://github.com/adityapk00/librustzcash", rev = "7183acd2fe12ebf201cae5b871166e356273c481",  package = "zcash_note_encryption", features = ["pre-zip-212"] }
+
+zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = ["zecwallet-compat"], optional = true }
+ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = ["zecwallet-compat"], optional = true }
+ledger-transport-hid = { version = "0.9", optional = true }
+ledger-transport = { version = "0.9.0", optional = true }
+zx-bip44 = { version = "0.1.0", optional = true }
+bytemuck = { version = "1.9.1", optional = true }
+derive_more = "0.99.17"
+tap = "1.0.1"
 
 [dev-dependencies]
-portpicker = "0.1.0"
+portpicker = "0.1.1"
 tempdir = "0.3.7"
 
 [build-dependencies]
-tonic-build = "0.4.2"
+tonic-build = "0.7.2"

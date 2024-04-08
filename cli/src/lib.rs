@@ -1,10 +1,10 @@
-use std::io::{self};
+use std::io;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use log::{error, info};
-
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
+use zecwalletlitelib::primitives::consensus::{MainNetwork, Parameters};
 use zecwalletlitelib::{commands, lightclient::LightClient};
 
 pub mod version;
@@ -32,6 +32,11 @@ macro_rules! configure_clapapp {
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
                 .takes_value(true))
+            .arg(Arg::with_name("ledger")
+                 .long("ledger")
+                 .value_name("ledger")
+                 .help("Create a new wallet by connecting to a ledger")
+                 .takes_value(false))
             .arg(Arg::with_name("birthday")
                 .long("birthday")
                 .value_name("birthday")
@@ -42,7 +47,13 @@ macro_rules! configure_clapapp {
                 .value_name("server")
                 .help("Lightwalletd server to connect to.")
                 .takes_value(true)
-                .default_value(lightclient::lightclient_config::DEFAULT_SERVER))
+                .default_value(lightclient::lightclient_config::DEFAULT_SERVER)
+                .takes_value(true))
+            .arg(Arg::with_name("data-dir")
+                .long("data-dir")
+                .value_name("data-dir")
+                .help("Absolute path to use as data directory")
+                .takes_value(true))
             .arg(Arg::with_name("COMMAND")
                 .help("Command to execute. If a command is not specified, zecwallet-cli will start in interactive mode.")
                 .required(false)
@@ -73,14 +84,17 @@ pub fn startup(
     server: http::Uri,
     seed: Option<String>,
     birthday: u64,
+    data_dir: Option<String>,
     first_sync: bool,
     print_updates: bool,
+    ledger: bool,
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) = LightClientConfig::create(server.clone())?;
+    let (config, latest_block_height) = LightClientConfig::<MainNetwork>::create(server.clone(), data_dir)?;
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
+        None if ledger => Arc::new(LightClient::with_ledger(&config, birthday)?),
         None => {
             if config.wallet_exists() {
                 Arc::new(LightClient::read_from_disk(&config)?)
@@ -89,7 +103,7 @@ pub fn startup(
                 // Create a wallet with height - 100, to protect against reorgs
                 Arc::new(LightClient::new(&config, latest_block_height.saturating_sub(100))?)
             }
-        }
+        },
     };
 
     // Initialize logging
@@ -118,14 +132,19 @@ pub fn startup(
     Ok((command_tx, resp_rx))
 }
 
-pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Receiver<String>) {
+pub fn start_interactive(
+    command_tx: Sender<(String, Vec<String>)>,
+    resp_rx: Receiver<String>,
+) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::Editor::<()>::new();
 
     println!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
-        command_tx.send((cmd.clone(), args)).unwrap();
+        command_tx
+            .send((cmd.clone(), args))
+            .unwrap();
         match resp_rx.recv() {
             Ok(s) => s,
             Err(e) => {
@@ -133,12 +152,22 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                 eprintln!("{}", e);
                 error!("{}", e);
                 return "".to_string();
-            }
+            },
         }
     };
 
     let info = send_command("info".to_string(), vec![]);
-    let chain_name = json::parse(&info).unwrap()["chain_name"].as_str().unwrap().to_string();
+    let chain_name = match json::parse(&info) {
+        Ok(s) => s["chain_name"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+        Err(e) => {
+            error!("{}", e);
+            eprintln!("Couldn't get chain name. {}", e);
+            return;
+        },
+    };
 
     loop {
         // Read the height first
@@ -156,7 +185,7 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                     Err(_) => {
                         println!("Mismatched Quotes");
                         continue;
-                    }
+                    },
                 };
 
                 if cmd_args.is_empty() {
@@ -172,38 +201,42 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                 if line == "quit" {
                     break;
                 }
-            }
+            },
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
                 println!("{}", send_command("save".to_string(), vec![]));
                 break;
-            }
+            },
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
                 println!("{}", send_command("save".to_string(), vec![]));
                 break;
-            }
+            },
             Err(err) => {
                 println!("Error: {:?}", err);
                 break;
-            }
+            },
         }
     }
 }
 
-pub fn command_loop(lightclient: Arc<LightClient>) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
+pub fn command_loop<P: Parameters + Send + Sync + 'static>(
+    lc: Arc<LightClient<P>>
+) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
     let (command_tx, command_rx) = channel::<(String, Vec<String>)>();
     let (resp_tx, resp_rx) = channel::<String>();
 
-    let lc = lightclient.clone();
     std::thread::spawn(move || {
         LightClient::start_mempool_monitor(lc.clone());
 
         loop {
             if let Ok((cmd, args)) = command_rx.recv() {
-                let args = args.iter().map(|s| s.as_ref()).collect();
+                let args = args
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect();
 
                 let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
                 resp_tx.send(cmd_response).unwrap();
@@ -223,14 +256,13 @@ pub fn command_loop(lightclient: Arc<LightClient>) -> (Sender<(String, Vec<Strin
 
 pub fn attempt_recover_seed(_password: Option<String>) {
     // Create a Light Client Config in an attempt to recover the file.
-    let _config = LightClientConfig {
+    let _config = LightClientConfig::<MainNetwork> {
         server: "0.0.0.0:0".parse().unwrap(),
         chain_name: "main".to_string(),
         sapling_activation_height: 0,
-        monitor_mempool: false,
         anchor_offset: [0u32; 5],
+        monitor_mempool: false,
         data_dir: None,
+        params: MainNetwork,
     };
-
 }
-
