@@ -18,13 +18,12 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
+use super::data::{OrchardNoteData, OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WitnessCache};
 use crate::lightclient::lightclient_config::MAX_REORG;
 
-use super::data::{OrchardNoteData, OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WitnessCache};
-
 /// List of all transactions in a wallet.
-/// Note that the parent is expected to hold a RwLock, so we will assume that all accesses to
-/// this struct are threadsafe/locked properly.
+/// Note that the parent is expected to hold a RwLock, so we will assume that
+/// all accesses to this struct are threadsafe/locked properly.
 pub struct WalletTxns {
     pub(crate) current: HashMap<TxId, WalletTx>,
     pub(crate) last_txid: Option<TxId>,
@@ -36,10 +35,7 @@ impl WalletTxns {
     }
 
     pub fn new() -> Self {
-        Self {
-            current: HashMap::new(),
-            last_txid: None,
-        }
+        Self { current: HashMap::new(), last_txid: None }
     }
 
     pub fn read_old<R: Read>(mut reader: R) -> io::Result<Self> {
@@ -50,12 +46,11 @@ impl WalletTxns {
             Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
-        let txs = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let txs = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, WalletTx>>();
 
-        Ok(Self {
-            current: txs,
-            last_txid: None,
-        })
+        Ok(Self { current: txs, last_txid: None })
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
@@ -74,16 +69,21 @@ impl WalletTxns {
             Ok((TxId::from_bytes(txid_bytes), WalletTx::read(r).unwrap()))
         })?;
 
-        let current = txs_tuples.into_iter().collect::<HashMap<TxId, WalletTx>>();
+        let current = txs_tuples
+            .into_iter()
+            .collect::<HashMap<TxId, WalletTx>>();
         let last_txid = current
             .values()
-            .fold(None, |c: Option<(TxId, BlockHeight)>, w| {
-                if c.is_none() || w.block > c.unwrap().1 {
-                    Some((w.txid.clone(), w.block))
-                } else {
-                    c
-                }
-            })
+            .fold(
+                None,
+                |c: Option<(TxId, BlockHeight)>, w| {
+                    if c.is_none() || w.block > c.unwrap().1 {
+                        Some((w.txid.clone(), w.block))
+                    } else {
+                        c
+                    }
+                },
+            )
             .map(|v| v.0);
 
         let _mempool = if version <= 20 {
@@ -103,14 +103,20 @@ impl WalletTxns {
         Ok(Self { current, last_txid })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // The hashmap, write as a set of tuples. Store them sorted so that wallets are
         // deterministically saved
         {
-            let mut txns = self.current.iter().collect::<Vec<(&TxId, &WalletTx)>>();
+            let mut txns = self
+                .current
+                .iter()
+                .collect::<Vec<(&TxId, &WalletTx)>>();
             txns.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
             Vector::write(&mut writer, &txns, |w, (k, v)| {
@@ -126,80 +132,92 @@ impl WalletTxns {
         self.current.clear();
     }
 
-    pub fn adjust_spendable_status(&mut self, spendable_keys: Vec<ExtendedFullViewingKey>) {
-        self.current.values_mut().for_each(|tx| {
-            tx.s_notes.iter_mut().for_each(|nd| {
-                nd.have_spending_key = spendable_keys.contains(&nd.extfvk);
-                if !nd.have_spending_key {
-                    nd.witnesses.clear();
-                }
-            })
-        });
+    pub fn adjust_spendable_status(
+        &mut self,
+        spendable_keys: Vec<ExtendedFullViewingKey>,
+    ) {
+        self.current
+            .values_mut()
+            .for_each(|tx| {
+                tx.s_notes.iter_mut().for_each(|nd| {
+                    nd.have_spending_key = spendable_keys.contains(&nd.extfvk);
+                    if !nd.have_spending_key {
+                        nd.witnesses.clear();
+                    }
+                })
+            });
     }
 
-    pub fn remove_txids(&mut self, txids_to_remove: Vec<TxId>) {
+    pub fn remove_txids(
+        &mut self,
+        txids_to_remove: Vec<TxId>,
+    ) {
         for txid in &txids_to_remove {
             self.current.remove(&txid);
         }
 
-        // We also need to update any sapling note data and utxos in existing transactions that
-        // were spent in any of the txids that were removed
-        self.current.values_mut().for_each(|wtx| {
-            // Update notes to rollback any spent notes
-            wtx.s_notes.iter_mut().for_each(|nd| {
-                // Mark note as unspent if the txid being removed spent it.
-                if nd.spent.is_some() && txids_to_remove.contains(&nd.spent.unwrap().0) {
-                    nd.spent = None;
-                }
+        // We also need to update any sapling note data and utxos in existing
+        // transactions that were spent in any of the txids that were removed
+        self.current
+            .values_mut()
+            .for_each(|wtx| {
+                // Update notes to rollback any spent notes
+                wtx.s_notes.iter_mut().for_each(|nd| {
+                    // Mark note as unspent if the txid being removed spent it.
+                    if nd.spent.is_some() && txids_to_remove.contains(&nd.spent.unwrap().0) {
+                        nd.spent = None;
+                    }
 
-                // Remove unconfirmed spends too
-                if nd.unconfirmed_spent.is_some() && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0) {
-                    nd.unconfirmed_spent = None;
-                }
+                    // Remove unconfirmed spends too
+                    if nd.unconfirmed_spent.is_some() && txids_to_remove.contains(&nd.unconfirmed_spent.unwrap().0) {
+                        nd.unconfirmed_spent = None;
+                    }
+                });
+
+                // Update UTXOs to rollback any spent utxos
+                wtx.utxos.iter_mut().for_each(|utxo| {
+                    if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
+                        utxo.spent = None;
+                        utxo.spent_at_height = None;
+                    }
+
+                    if utxo.unconfirmed_spent.is_some() && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0)
+                    {
+                        utxo.unconfirmed_spent = None;
+                    }
+                })
             });
-
-            // Update UTXOs to rollback any spent utxos
-            wtx.utxos.iter_mut().for_each(|utxo| {
-                if utxo.spent.is_some() && txids_to_remove.contains(&utxo.spent.unwrap()) {
-                    utxo.spent = None;
-                    utxo.spent_at_height = None;
-                }
-
-                if utxo.unconfirmed_spent.is_some() && txids_to_remove.contains(&utxo.unconfirmed_spent.unwrap().0) {
-                    utxo.unconfirmed_spent = None;
-                }
-            })
-        });
     }
 
-    // During reorgs, we need to remove all txns at a given height, and all spends that refer to any removed txns.
-    pub fn remove_txns_at_height(&mut self, reorg_height: u64) {
+    // During reorgs, we need to remove all txns at a given height, and all spends
+    // that refer to any removed txns.
+    pub fn remove_txns_at_height(
+        &mut self,
+        reorg_height: u64,
+    ) {
         let reorg_height = BlockHeight::from_u32(reorg_height as u32);
 
         // First, collect txids that need to be removed
         let txids_to_remove = self
             .current
             .values()
-            .filter_map(|wtx| {
-                if wtx.block >= reorg_height {
-                    Some(wtx.txid.clone())
-                } else {
-                    None
-                }
-            })
+            .filter_map(|wtx| if wtx.block >= reorg_height { Some(wtx.txid.clone()) } else { None })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
 
         // Of the notes that still remain, unroll the witness.
         // Trim all witnesses for the invalidated blocks
         for tx in self.current.values_mut() {
-            // We only want to trim the witness for "existing" notes, i.e., notes that were created before the block that is being removed
+            // We only want to trim the witness for "existing" notes, i.e., notes that were
+            // created before the block that is being removed
             if tx.block < reorg_height {
                 for nd in tx.s_notes.iter_mut() {
                     // The latest witness is at the last() position, so just pop() it.
-                    // We should be checking if there is a witness at all, but if there is none, it is an
-                    // empty vector, for which pop() is a no-op.
-                    let _discard = nd.witnesses.pop(u64::from(reorg_height));
+                    // We should be checking if there is a witness at all, but if there is none, it
+                    // is an empty vector, for which pop() is a no-op.
+                    let _discard = nd
+                        .witnesses
+                        .pop(u64::from(reorg_height));
                 }
             }
         }
@@ -209,7 +227,10 @@ impl WalletTxns {
         &self.last_txid
     }
 
-    pub fn get_notes_for_updating(&self, before_block: u64) -> Vec<(TxId, Nullifier)> {
+    pub fn get_notes_for_updating(
+        &self,
+        before_block: u64,
+    ) -> Vec<(TxId, Nullifier)> {
         let before_block = BlockHeight::from_u32(before_block as u32);
 
         self.current
@@ -217,23 +238,31 @@ impl WalletTxns {
             .filter(|(_, wtx)| !wtx.unconfirmed) // Update only confirmed notes
             .flat_map(|(txid, wtx)| {
                 // Fetch notes that are before the before_block.
-                wtx.s_notes.iter().filter_map(move |snd| {
-                    if wtx.block <= before_block
-                        && snd.have_spending_key
-                        && snd.witnesses.len() > 0
-                        && snd.spent.is_none()
-                    {
-                        Some((txid.clone(), snd.nullifier.clone()))
-                    } else {
-                        None
-                    }
-                })
+                wtx.s_notes
+                    .iter()
+                    .filter_map(move |snd| {
+                        if wtx.block <= before_block
+                            && snd.have_spending_key
+                            && snd.witnesses.len() > 0
+                            && snd.spent.is_none()
+                        {
+                            Some((txid.clone(), snd.nullifier.clone()))
+                        } else {
+                            None
+                        }
+                    })
             })
             .collect()
     }
 
-    pub fn total_funds_spent_in(&self, txid: &TxId) -> u64 {
-        self.current.get(&txid).map(|t| t.total_funds_spent()).unwrap_or(0)
+    pub fn total_funds_spent_in(
+        &self,
+        txid: &TxId,
+    ) -> u64 {
+        self.current
+            .get(&txid)
+            .map(|t| t.total_funds_spent())
+            .unwrap_or(0)
     }
 
     pub fn get_unspent_s_nullifiers(&self) -> Vec<(Nullifier, u64, TxId)> {
@@ -260,7 +289,11 @@ impl WalletTxns {
             .collect()
     }
 
-    pub(crate) fn get_note_witness(&self, txid: &TxId, nullifier: &Nullifier) -> Option<(WitnessCache, BlockHeight)> {
+    pub(crate) fn get_note_witness(
+        &self,
+        txid: &TxId,
+        nullifier: &Nullifier,
+    ) -> Option<(WitnessCache, BlockHeight)> {
         self.current.get(txid).map(|wtx| {
             wtx.s_notes
                 .iter()
@@ -274,19 +307,26 @@ impl WalletTxns {
         (height, tx_num, output_num): (u64, usize, u32),
         pos: Option<Position>,
     ) {
-        self.current.iter_mut().for_each(|(_, wtx)| {
-            wtx.o_notes
-                .iter_mut()
-                .filter(|on| on.witness_position.is_none())
-                .find(|on| {
-                    let (h, t, p) = on.created_at;
-                    height == h && t == tx_num && output_num == p
-                })
-                .map(|on| on.witness_position = pos);
-        });
+        self.current
+            .iter_mut()
+            .for_each(|(_, wtx)| {
+                wtx.o_notes
+                    .iter_mut()
+                    .filter(|on| on.witness_position.is_none())
+                    .find(|on| {
+                        let (h, t, p) = on.created_at;
+                        height == h && t == tx_num && output_num == p
+                    })
+                    .map(|on| on.witness_position = pos);
+            });
     }
 
-    pub(crate) fn set_s_note_witnesses(&mut self, txid: &TxId, nullifier: &Nullifier, witnesses: WitnessCache) {
+    pub(crate) fn set_s_note_witnesses(
+        &mut self,
+        txid: &TxId,
+        nullifier: &Nullifier,
+        witnesses: WitnessCache,
+    ) {
         self.current
             .get_mut(txid)
             .unwrap()
@@ -297,18 +337,26 @@ impl WalletTxns {
             .witnesses = witnesses;
     }
 
-    pub(crate) fn clear_old_witnesses(&mut self, latest_height: u64) {
+    pub(crate) fn clear_old_witnesses(
+        &mut self,
+        latest_height: u64,
+    ) {
         let cutoff = (latest_height.saturating_sub(MAX_REORG as u64)) as u32;
 
-        self.current.iter_mut().for_each(|(_, wtx)| {
-            wtx.s_notes
-                .iter_mut()
-                .filter(|n| !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff)
-                .for_each(|n| n.witnesses.clear());
-        });
+        self.current
+            .iter_mut()
+            .for_each(|(_, wtx)| {
+                wtx.s_notes
+                    .iter_mut()
+                    .filter(|n| !n.witnesses.is_empty() && n.spent.is_some() && n.spent.unwrap().1 < cutoff)
+                    .for_each(|n| n.witnesses.clear());
+            });
     }
 
-    pub(crate) fn clear_expired_mempool(&mut self, latest_height: u64) {
+    pub(crate) fn clear_expired_mempool(
+        &mut self,
+        latest_height: u64,
+    ) {
         let cutoff = BlockHeight::from_u32((latest_height.saturating_sub(MAX_REORG as u64)) as u32);
 
         let txids_to_remove = self
@@ -325,7 +373,8 @@ impl WalletTxns {
         self.remove_txids(txids_to_remove);
     }
 
-    // Will mark the nullifier of the given txid as spent. Returns the amount of the nullifier
+    // Will mark the nullifier of the given txid as spent. Returns the amount of the
+    // nullifier
     pub fn mark_txid_o_nf_spent(
         &mut self,
         txid: &TxId,
@@ -347,7 +396,8 @@ impl WalletTxns {
         note_data.note.value().inner()
     }
 
-    // Will mark the nullifier of the given txid as spent. Returns the amount of the nullifier
+    // Will mark the nullifier of the given txid as spent. Returns the amount of the
+    // nullifier
     pub fn mark_txid_s_nf_spent(
         &mut self,
         txid: &TxId,
@@ -369,9 +419,13 @@ impl WalletTxns {
         note_data.note.value
     }
 
-    // Check this transaction to see if it is an outgoing transaction, and if it is, mark all recieved notes in this
-    // transction as change. i.e., If any funds were spent in this transaction, all recieved notes are change notes.
-    pub fn check_notes_mark_change(&mut self, txid: &TxId) {
+    // Check this transaction to see if it is an outgoing transaction, and if it is,
+    // mark all recieved notes in this transction as change. i.e., If any funds
+    // were spent in this transaction, all recieved notes are change notes.
+    pub fn check_notes_mark_change(
+        &mut self,
+        txid: &TxId,
+    ) {
         if self.total_funds_spent_in(txid) > 0 {
             self.current.get_mut(txid).map(|wtx| {
                 wtx.s_notes.iter_mut().for_each(|n| {
@@ -393,13 +447,14 @@ impl WalletTxns {
         datetime: u64,
     ) -> &'_ mut WalletTx {
         if !self.current.contains_key(&txid) {
-            self.current.insert(
-                txid.clone(),
-                WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed),
-            );
+            self.current
+                .insert(txid.clone(), WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed));
             self.last_txid = Some(txid.clone());
         }
-        let wtx = self.current.get_mut(&txid).expect("Txid should be present");
+        let wtx = self
+            .current
+            .get_mut(&txid)
+            .expect("Txid should be present");
 
         // Make sure the unconfirmed status matches
         if wtx.unconfirmed != unconfirmed {
@@ -411,8 +466,16 @@ impl WalletTxns {
         wtx
     }
 
-    pub fn set_price(&mut self, txid: &TxId, price: Option<f64>) {
-        price.map(|p| self.current.get_mut(txid).map(|tx| tx.zec_price = Some(p)));
+    pub fn set_price(
+        &mut self,
+        txid: &TxId,
+        price: Option<f64>,
+    ) {
+        price.map(|p| {
+            self.current
+                .get_mut(txid)
+                .map(|tx| tx.zec_price = Some(p))
+        });
     }
 
     pub fn add_new_o_spent(
@@ -429,21 +492,31 @@ impl WalletTxns {
         {
             let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
 
-            // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
+            // Mark the height correctly, in case this was previously a mempool or
+            // unconfirmed tx.
             wtx.block = height;
 
-            if wtx.o_spent_nullifiers.iter().find(|nf| **nf == nullifier).is_none() {
+            if wtx
+                .o_spent_nullifiers
+                .iter()
+                .find(|nf| **nf == nullifier)
+                .is_none()
+            {
                 wtx.o_spent_nullifiers.push(nullifier);
                 wtx.total_orchard_value_spent += value;
             }
         }
 
-        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+        // Since this Txid has spent some funds, output notes in this Tx that are sent
+        // to us are actually change.
         self.check_notes_mark_change(&txid);
 
         // Mark the source note's nullifier as spent
         if !unconfirmed {
-            let wtx = self.current.get_mut(&source_txid).expect("Txid should be present");
+            let wtx = self
+                .current
+                .get_mut(&source_txid)
+                .expect("Txid should be present");
 
             wtx.o_notes
                 .iter_mut()
@@ -474,26 +547,39 @@ impl WalletTxns {
         {
             let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
 
-            // Mark the height correctly, in case this was previously a mempool or unconfirmed tx.
+            // Mark the height correctly, in case this was previously a mempool or
+            // unconfirmed tx.
             wtx.block = height;
 
-            if wtx.s_spent_nullifiers.iter().find(|nf| **nf == nullifier).is_none() {
+            if wtx
+                .s_spent_nullifiers
+                .iter()
+                .find(|nf| **nf == nullifier)
+                .is_none()
+            {
                 wtx.s_spent_nullifiers.push(nullifier);
                 wtx.total_sapling_value_spent += value;
             }
         }
 
-        // Since this Txid has spent some funds, output notes in this Tx that are sent to us are actually change.
+        // Since this Txid has spent some funds, output notes in this Tx that are sent
+        // to us are actually change.
         self.check_notes_mark_change(&txid);
 
         // Mark the source note's nullifier as spent
         if !unconfirmed {
-            let wtx = self.current.get_mut(&source_txid).expect("Txid should be present");
+            let wtx = self
+                .current
+                .get_mut(&source_txid)
+                .expect("Txid should be present");
 
-            wtx.s_notes.iter_mut().find(|n| n.nullifier == nullifier).map(|nd| {
-                // Record the spent height
-                nd.spent = Some((txid, height.into()));
-            });
+            wtx.s_notes
+                .iter_mut()
+                .find(|n| n.nullifier == nullifier)
+                .map(|nd| {
+                    // Record the spent height
+                    nd.spent = Some((txid, height.into()));
+                });
         }
     }
 
@@ -596,7 +682,11 @@ impl WalletTxns {
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
-        match wtx.s_notes.iter_mut().find(|n| n.note == note) {
+        match wtx
+            .s_notes
+            .iter_mut()
+            .find(|n| n.note == note)
+        {
             None => {
                 let nd = SaplingNoteData {
                     extfvk: extfvk.clone(),
@@ -612,8 +702,8 @@ impl WalletTxns {
                 };
 
                 wtx.s_notes.push(nd);
-            }
-            Some(_) => {}
+            },
+            Some(_) => {},
         }
     }
 
@@ -637,7 +727,11 @@ impl WalletTxns {
 
         let note_nullifier = note.nullifier(fvk);
 
-        match wtx.o_notes.iter_mut().find(|n| n.note.nullifier(fvk) == note_nullifier) {
+        match wtx
+            .o_notes
+            .iter_mut()
+            .find(|n| n.note.nullifier(fvk) == note_nullifier)
+        {
             None => {
                 let nd = OrchardNoteData {
                     fvk: fvk.clone(),
@@ -654,14 +748,15 @@ impl WalletTxns {
                 wtx.o_notes.push(nd);
 
                 // TODO: Remove pending notes for this tx.
-            }
+            },
             Some(_) => {
-                // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
-                // again after this.
-                // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
-                // and has some dangling witnesses
+                // If this note already exists, then just reset the witnesses, because we'll
+                // start scanning the witnesses again after this.
+                // This is likely to happen if the previous wallet wasn't synced properly or was
+                // aborted in the middle of a sync, and has some dangling
+                // witnesses
                 println!("Orchard note already exists in wallet!");
-            }
+            },
         }
     }
 
@@ -685,13 +780,14 @@ impl WalletTxns {
         wtx.block = height;
 
         let nullifier = note.nf(&extfvk.fvk.vk.nk, witness.position() as u64);
-        let witnesses = if have_spending_key {
-            WitnessCache::new(vec![witness], u64::from(height))
-        } else {
-            WitnessCache::empty()
-        };
+        let witnesses =
+            if have_spending_key { WitnessCache::new(vec![witness], u64::from(height)) } else { WitnessCache::empty() };
 
-        match wtx.s_notes.iter_mut().find(|n| n.nullifier == nullifier) {
+        match wtx
+            .s_notes
+            .iter_mut()
+            .find(|n| n.nullifier == nullifier)
+        {
             None => {
                 let nd = SaplingNoteData {
                     extfvk: extfvk.clone(),
@@ -709,20 +805,28 @@ impl WalletTxns {
                 wtx.s_notes.push(nd);
 
                 // Also remove any pending notes.
-                wtx.s_notes.retain(|n| n.nullifier.0 != [0u8; 32]);
-            }
+                wtx.s_notes
+                    .retain(|n| n.nullifier.0 != [0u8; 32]);
+            },
             Some(n) => {
-                // If this note already exists, then just reset the witnesses, because we'll start scanning the witnesses
-                // again after this.
-                // This is likely to happen if the previous wallet wasn't synced properly or was aborted in the middle of a sync,
-                // and has some dangling witnesses
+                // If this note already exists, then just reset the witnesses, because we'll
+                // start scanning the witnesses again after this.
+                // This is likely to happen if the previous wallet wasn't synced properly or was
+                // aborted in the middle of a sync, and has some dangling
+                // witnesses
                 n.witnesses = witnesses;
-            }
+            },
         }
     }
 
-    // Update the memo for a sapling note if it already exists. If the note doesn't exist, then nothing happens.
-    pub fn add_memo_to_s_note(&mut self, txid: &TxId, note: Note, memo: Memo) {
+    // Update the memo for a sapling note if it already exists. If the note doesn't
+    // exist, then nothing happens.
+    pub fn add_memo_to_s_note(
+        &mut self,
+        txid: &TxId,
+        note: Note,
+        memo: Memo,
+    ) {
         self.current.get_mut(txid).map(|wtx| {
             wtx.s_notes
                 .iter_mut()
@@ -731,8 +835,15 @@ impl WalletTxns {
         });
     }
 
-    // Update the memo for a orchard note if it already exists. The note has to already exist.
-    pub fn add_memo_to_o_note(&mut self, txid: &TxId, fvk: &FullViewingKey, note: orchard::Note, memo: Memo) {
+    // Update the memo for a orchard note if it already exists. The note has to
+    // already exist.
+    pub fn add_memo_to_o_note(
+        &mut self,
+        txid: &TxId,
+        fvk: &FullViewingKey,
+        note: orchard::Note,
+        memo: Memo,
+    ) {
         // println!("Adding memo to orchard note");
         let note_nullifier = note.nullifier(fvk);
 
@@ -744,12 +855,22 @@ impl WalletTxns {
         });
     }
 
-    pub fn add_outgoing_metadata(&mut self, txid: &TxId, outgoing_metadata: Vec<OutgoingTxMetadata>) {
+    pub fn add_outgoing_metadata(
+        &mut self,
+        txid: &TxId,
+        outgoing_metadata: Vec<OutgoingTxMetadata>,
+    ) {
         if let Some(wtx) = self.current.get_mut(txid) {
-            // This is n^2 search, but this is likely very small struct, limited by the protocol, so...
+            // This is n^2 search, but this is likely very small struct, limited by the
+            // protocol, so...
             let new_omd: Vec<_> = outgoing_metadata
                 .into_iter()
-                .filter(|om| wtx.outgoing_metadata.iter().find(|o| **o == *om).is_none())
+                .filter(|om| {
+                    wtx.outgoing_metadata
+                        .iter()
+                        .find(|o| **o == *om)
+                        .is_none()
+                })
                 .collect();
 
             wtx.outgoing_metadata.extend(new_omd);

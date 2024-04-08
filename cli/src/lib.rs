@@ -3,7 +3,6 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use log::{error, info};
-
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
 use zecwalletlitelib::{commands, lightclient::LightClient};
 use zecwalletlitelib::{MainNetwork, Parameters};
@@ -86,7 +85,7 @@ pub fn startup(
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
     let (config, latest_block_height) = LightClientConfig::create(MainNetwork, server.clone(), data_dir)?;
-    
+
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
         None => {
@@ -97,7 +96,7 @@ pub fn startup(
                 // Create a wallet with height - 100, to protect against reorgs
                 Arc::new(LightClient::new(&config, latest_block_height.saturating_sub(100))?)
             }
-        }
+        },
     };
 
     // Initialize logging
@@ -126,14 +125,19 @@ pub fn startup(
     Ok((command_tx, resp_rx))
 }
 
-pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Receiver<String>) {
+pub fn start_interactive(
+    command_tx: Sender<(String, Vec<String>)>,
+    resp_rx: Receiver<String>,
+) {
     // `()` can be used when no completer is required
     let mut rl = rustyline::Editor::<()>::new();
 
     println!("Ready!");
 
     let send_command = |cmd: String, args: Vec<String>| -> String {
-        command_tx.send((cmd.clone(), args)).unwrap();
+        command_tx
+            .send((cmd.clone(), args))
+            .unwrap();
         match resp_rx.recv() {
             Ok(s) => s,
             Err(e) => {
@@ -141,18 +145,21 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                 eprintln!("{}", e);
                 error!("{}", e);
                 return "".to_string();
-            }
+            },
         }
     };
 
     let info = send_command("info".to_string(), vec![]);
     let chain_name = match json::parse(&info) {
-        Ok(s) => s["chain_name"].as_str().unwrap().to_string(),
+        Ok(s) => s["chain_name"]
+            .as_str()
+            .unwrap()
+            .to_string(),
         Err(e) => {
             error!("{}", e);
             eprintln!("Couldn't get chain name. {}", e);
             return;
-        }
+        },
     };
 
     loop {
@@ -171,7 +178,7 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                     Err(_) => {
                         println!("Mismatched Quotes");
                         continue;
-                    }
+                    },
                 };
 
                 if cmd_args.is_empty() {
@@ -187,29 +194,29 @@ pub fn start_interactive(command_tx: Sender<(String, Vec<String>)>, resp_rx: Rec
                 if line == "quit" {
                     break;
                 }
-            }
+            },
             Err(rustyline::error::ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 info!("CTRL-C");
                 println!("{}", send_command("save".to_string(), vec![]));
                 break;
-            }
+            },
             Err(rustyline::error::ReadlineError::Eof) => {
                 println!("CTRL-D");
                 info!("CTRL-D");
                 println!("{}", send_command("save".to_string(), vec![]));
                 break;
-            }
+            },
             Err(err) => {
                 println!("Error: {:?}", err);
                 break;
-            }
+            },
         }
     }
 }
 
 pub fn command_loop<P: Parameters + Send + Sync + 'static>(
-    lightclient: Arc<LightClient<P>>,
+    lightclient: Arc<LightClient<P>>
 ) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
     let (command_tx, command_rx) = channel::<(String, Vec<String>)>();
     let (resp_tx, resp_rx) = channel::<String>();
@@ -220,7 +227,10 @@ pub fn command_loop<P: Parameters + Send + Sync + 'static>(
 
         loop {
             if let Ok((cmd, args)) = command_rx.recv() {
-                let args = args.iter().map(|s| s.as_ref()).collect();
+                let args = args
+                    .iter()
+                    .map(|s| s.as_ref())
+                    .collect();
 
                 let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
                 resp_tx.send(cmd_response).unwrap();
@@ -249,6 +259,4 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         data_dir: None,
         params: MainNetwork,
     };
-
 }
-

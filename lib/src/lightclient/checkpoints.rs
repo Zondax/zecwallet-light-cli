@@ -1,4 +1,7 @@
-pub fn get_closest_checkpoint(chain_name: &str, height: u64) -> Option<(u64, &'static str, &'static str)> {
+pub fn get_closest_checkpoint(
+    chain_name: &str,
+    height: u64,
+) -> Option<(u64, &'static str, &'static str)> {
     log::info!("Trying to get checkpoint closest to block {}", height);
     match chain_name {
         "ztestsapling" => get_test_checkpoint(height),
@@ -97,16 +100,25 @@ fn find_checkpoint(
     chkpts: Vec<(u64, &'static str, &'static str)>,
 ) -> Option<(u64, &'static str, &'static str)> {
     // Find the closest checkpoint
-    let mut heights = chkpts.iter().map(|(h, _, _)| *h as u64).collect::<Vec<_>>();
+    let mut heights = chkpts
+        .iter()
+        .map(|(h, _, _)| *h as u64)
+        .collect::<Vec<_>>();
     heights.sort();
 
     match get_first_lower_than(height, heights) {
-        Some(closest_height) => chkpts.iter().find(|(h, _, _)| *h == closest_height).map(|t| *t),
+        Some(closest_height) => chkpts
+            .iter()
+            .find(|(h, _, _)| *h == closest_height)
+            .map(|t| *t),
         None => None,
     }
 }
 
-fn get_first_lower_than(height: u64, heights: Vec<u64>) -> Option<u64> {
+fn get_first_lower_than(
+    height: u64,
+    heights: Vec<u64>,
+) -> Option<u64> {
     // If it's before the first checkpoint, return None.
     if heights.len() == 0 || height < heights[0] {
         return None;

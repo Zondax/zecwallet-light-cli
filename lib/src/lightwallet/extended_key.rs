@@ -74,13 +74,13 @@ impl ExtendedPrivKey {
         let sig_bytes = signature.as_ref();
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
         let private_key = SecretKey::from_slice(key)?;
-        Ok(ExtendedPrivKey {
-            private_key,
-            chain_code: chain_code.to_vec(),
-        })
+        Ok(ExtendedPrivKey { private_key, chain_code: chain_code.to_vec() })
     }
 
-    fn sign_hardended_key(&self, index: u32) -> ring::hmac::Tag {
+    fn sign_hardended_key(
+        &self,
+        index: u32,
+    ) -> ring::hmac::Tag {
         let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
         let mut h = Context::with_key(&signing_key);
         h.update(&[0x00]);
@@ -89,7 +89,10 @@ impl ExtendedPrivKey {
         h.sign()
     }
 
-    fn sign_normal_key(&self, index: u32) -> ring::hmac::Tag {
+    fn sign_normal_key(
+        &self,
+        index: u32,
+    ) -> ring::hmac::Tag {
         let signing_key = Key::new(hmac::HMAC_SHA512, &self.chain_code);
         let mut h = Context::with_key(&signing_key);
         let public_key = PublicKey::from_secret_key(&SECP256K1_SIGN_ONLY, &self.private_key);
@@ -99,7 +102,10 @@ impl ExtendedPrivKey {
     }
 
     /// Derive a child key from ExtendedPrivKey.
-    pub fn derive_private_key(&self, key_index: KeyIndex) -> Result<ExtendedPrivKey, Error> {
+    pub fn derive_private_key(
+        &self,
+        key_index: KeyIndex,
+    ) -> Result<ExtendedPrivKey, Error> {
         if !key_index.is_valid() {
             return Err(Error::InvalidTweak);
         }
@@ -111,9 +117,6 @@ impl ExtendedPrivKey {
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
         let mut private_key = SecretKey::from_slice(key)?;
         private_key.add_assign(&self.private_key[..])?;
-        Ok(ExtendedPrivKey {
-            private_key,
-            chain_code: chain_code.to_vec(),
-        })
+        Ok(ExtendedPrivKey { private_key, chain_code: chain_code.to_vec() })
     }
 }

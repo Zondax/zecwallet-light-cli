@@ -1,18 +1,3 @@
-use crate::{
-    lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{
-        data::OutgoingTxMetadata,
-        keys::{Keys, ToBase58Check},
-        wallet_txns::WalletTxns,
-        LightWallet,
-    },
-};
-
-use futures::{stream::FuturesUnordered, StreamExt};
-use log::info;
-use orchard::note_encryption::OrchardDomain;
-use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
-
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
@@ -22,6 +7,10 @@ use std::{
         Arc,
     },
 };
+
+use futures::{stream::FuturesUnordered, StreamExt};
+use log::info;
+use orchard::note_encryption::OrchardDomain;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -30,7 +19,7 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
-
+use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 use zcash_primitives::{
     consensus::{self, BlockHeight},
     legacy::TransparentAddress,
@@ -40,6 +29,15 @@ use zcash_primitives::{
 };
 
 use super::syncdata::BlazeSyncData;
+use crate::{
+    lightclient::lightclient_config::LightClientConfig,
+    lightwallet::{
+        data::OutgoingTxMetadata,
+        keys::{Keys, ToBase58Check},
+        wallet_txns::WalletTxns,
+        LightWallet,
+    },
+};
 
 pub struct FetchFullTxns<P> {
     config: LightClientConfig<P>,
@@ -53,11 +51,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         keys: Arc<RwLock<Keys<P>>>,
         wallet_txns: Arc<RwLock<WalletTxns>>,
     ) -> Self {
-        Self {
-            config: config.clone(),
-            keys,
-            wallet_txns,
-        }
+        Self { config: config.clone(), keys, wallet_txns }
     }
 
     pub async fn start(
@@ -73,8 +67,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         let keys = self.keys.clone();
         let config = self.config.clone();
 
-        let start_height = bsync_data.read().await.sync_status.read().await.start_block;
-        let end_height = bsync_data.read().await.sync_status.read().await.end_block;
+        let start_height = bsync_data
+            .read()
+            .await
+            .sync_status
+            .read()
+            .await
+            .start_block;
+        let end_height = bsync_data
+            .read()
+            .await
+            .sync_status
+            .read()
+            .await
+            .end_block;
 
         let bsync_data_i = bsync_data.clone();
 
@@ -87,13 +93,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 let config = config.clone();
                 let keys = keys.clone();
                 let wallet_txns = wallet_txns.clone();
-                let block_time = bsync_data_i.read().await.block_data.get_block_timestamp(&height).await;
+                let block_time = bsync_data_i
+                    .read()
+                    .await
+                    .block_data
+                    .get_block_timestamp(&height)
+                    .await;
                 let fulltx_fetcher = fulltx_fetcher.clone();
                 let bsync_data = bsync_data_i.clone();
                 let last_progress = last_progress.clone();
 
                 workers.push(tokio::spawn(async move {
-                    // It is possible that we recieve the same txid multiple times, so we keep track of all the txids that were fetched
+                    // It is possible that we recieve the same txid multiple times, so we keep track
+                    // of all the txids that were fetched
                     let tx = {
                         // Fetch the TxId from LightwalletD and process all the parts of it.
                         let (tx, rx) = oneshot::channel();
@@ -103,7 +115,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
 
                     let progress = start_height - u64::from(height);
                     if progress > last_progress.load(Ordering::SeqCst) {
-                        bsync_data.read().await.sync_status.write().await.txn_scan_done = progress;
+                        bsync_data
+                            .read()
+                            .await
+                            .sync_status
+                            .write()
+                            .await
+                            .txn_scan_done = progress;
                         last_progress.store(progress, Ordering::SeqCst);
                     }
 
@@ -117,8 +135,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 r.map_err(|r| r.to_string())??;
             }
 
-            bsync_data_i.read().await.sync_status.write().await.txn_scan_done = start_height - end_height + 1;
-            //info!("Finished fetching all full transactions");
+            bsync_data_i
+                .read()
+                .await
+                .sync_status
+                .write()
+                .await
+                .txn_scan_done = start_height - end_height + 1;
+            // info!("Finished fetching all full transactions");
 
             Ok(())
         });
@@ -137,11 +161,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 let keys = keys.clone();
                 let wallet_txns = wallet_txns.clone();
 
-                let block_time = bsync_data.read().await.block_data.get_block_timestamp(&height).await;
+                let block_time = bsync_data
+                    .read()
+                    .await
+                    .block_data
+                    .get_block_timestamp(&height)
+                    .await;
                 Self::scan_full_tx(config, tx, height, false, block_time, keys, wallet_txns, None).await;
             }
 
-            //info!("Finished full_tx scanning all txns");
+            // info!("Finished full_tx scanning all txns");
             Ok(())
         });
 
@@ -176,7 +205,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
     ) {
         // Collect our t-addresses for easy checking
         let taddrs = keys.read().await.get_all_taddrs();
-        let taddrs_set: HashSet<_> = taddrs.iter().map(|t| t.clone()).collect();
+        let taddrs_set: HashSet<_> = taddrs
+            .iter()
+            .map(|t| t.clone())
+            .collect();
 
         // Step 1: Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = tx.transparent_bundle() {
@@ -186,26 +218,32 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                         let output_taddr = hash.to_base58check(&config.base58_pubkey_address(), &[]);
                         if taddrs_set.contains(&output_taddr) {
                             // This is our address. Add this as an output to the txid
-                            wallet_txns.write().await.add_new_taddr_output(
-                                tx.txid(),
-                                output_taddr.clone(),
-                                height.into(),
-                                unconfirmed,
-                                block_time as u64,
-                                &vout,
-                                n as u32,
-                            );
+                            wallet_txns
+                                .write()
+                                .await
+                                .add_new_taddr_output(
+                                    tx.txid(),
+                                    output_taddr.clone(),
+                                    height.into(),
+                                    unconfirmed,
+                                    block_time as u64,
+                                    &vout,
+                                    n as u32,
+                                );
 
                             // Ensure that we add any new HD addresses
-                            keys.write().await.ensure_hd_taddresses(&output_taddr);
+                            keys.write()
+                                .await
+                                .ensure_hd_taddresses(&output_taddr);
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
             }
         }
 
-        // Remember if this is an outgoing Tx. Useful for when we want to grab the outgoing metadata.
+        // Remember if this is an outgoing Tx. Useful for when we want to grab the
+        // outgoing metadata.
         let mut is_outgoing_tx = false;
 
         // Step 2. Scan transparent spends
@@ -253,38 +291,47 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         if total_transparent_value_spent > 0 {
             is_outgoing_tx = true;
 
-            wallet_txns.write().await.add_taddr_spent(
-                tx.txid(),
-                height,
-                unconfirmed,
-                block_time as u64,
-                total_transparent_value_spent,
-            );
+            wallet_txns
+                .write()
+                .await
+                .add_taddr_spent(tx.txid(), height, unconfirmed, block_time as u64, total_transparent_value_spent);
         }
 
-        // Step 3: Check if any of the nullifiers spent in this Tx are ours. We only need this for unconfirmed txns,
-        // because for txns in the block, we will check the nullifiers from the blockdata
+        // Step 3: Check if any of the nullifiers spent in this Tx are ours. We only
+        // need this for unconfirmed txns, because for txns in the block, we
+        // will check the nullifiers from the blockdata
         if unconfirmed {
-            let unspent_nullifiers = wallet_txns.read().await.get_unspent_s_nullifiers();
+            let unspent_nullifiers = wallet_txns
+                .read()
+                .await
+                .get_unspent_s_nullifiers();
             if let Some(s_bundle) = tx.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
-                    if let Some((nf, value, txid)) = unspent_nullifiers.iter().find(|(nf, _, _)| *nf == s.nullifier) {
-                        wallet_txns.write().await.add_new_s_spent(
-                            tx.txid(),
-                            height,
-                            unconfirmed,
-                            block_time,
-                            *nf,
-                            *value,
-                            *txid,
-                        );
+                    if let Some((nf, value, txid)) = unspent_nullifiers
+                        .iter()
+                        .find(|(nf, _, _)| *nf == s.nullifier)
+                    {
+                        wallet_txns
+                            .write()
+                            .await
+                            .add_new_s_spent(tx.txid(), height, unconfirmed, block_time, *nf, *value, *txid);
                     }
                 }
             }
         }
         // Collect all our z addresses, to check for change
-        let z_addresses: HashSet<String> = HashSet::from_iter(keys.read().await.get_all_zaddresses().into_iter());
-        let u_addresses: HashSet<String> = HashSet::from_iter(keys.read().await.get_all_uaddresses().into_iter());
+        let z_addresses: HashSet<String> = HashSet::from_iter(
+            keys.read()
+                .await
+                .get_all_zaddresses()
+                .into_iter(),
+        );
+        let u_addresses: HashSet<String> = HashSet::from_iter(
+            keys.read()
+                .await
+                .get_all_uaddresses()
+                .into_iter(),
+        );
 
         // Collect all our OVKs, to scan for outputs
         let ovks: Vec<_> = keys
@@ -296,12 +343,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             .collect();
 
         let extfvks = Arc::new(keys.read().await.get_all_extfvks());
-        let s_ivks: Vec<_> = extfvks.iter().map(|k| k.fvk.vk.ivk()).collect();
+        let s_ivks: Vec<_> = extfvks
+            .iter()
+            .map(|k| k.fvk.vk.ivk())
+            .collect();
 
-        // Step 4a: Scan shielded sapling outputs to see if anyone of them is us, and if it is, extract the memo. Note that if this
-        // is invoked by a transparent transaction, and we have not seen this Tx from the trial_decryptions processor, the Note
-        // might not exist, and the memo updating might be a No-Op. That's Ok, the memo will get updated when this Tx is scanned
-        // a second time by the Full Tx Fetcher
+        // Step 4a: Scan shielded sapling outputs to see if anyone of them is us, and if
+        // it is, extract the memo. Note that if this is invoked by a
+        // transparent transaction, and we have not seen this Tx from the
+        // trial_decryptions processor, the Note might not exist, and the memo
+        // updating might be a No-Op. That's Ok, the memo will get updated when this Tx
+        // is scanned a second time by the Full Tx Fetcher
         let mut outgoing_metadatas = vec![];
 
         if let Some(s_bundle) = tx.sapling_bundle() {
@@ -316,18 +368,27 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
 
                     // info!("A sapling note was received into the wallet in {}", tx.txid());
                     if unconfirmed {
-                        wallet_txns.write().await.add_pending_note(
-                            tx.txid(),
-                            height,
-                            block_time as u64,
-                            note.clone(),
-                            to,
-                            &extfvks.get(i).unwrap(),
-                        );
+                        wallet_txns
+                            .write()
+                            .await
+                            .add_pending_note(
+                                tx.txid(),
+                                height,
+                                block_time as u64,
+                                note.clone(),
+                                to,
+                                &extfvks.get(i).unwrap(),
+                            );
                     }
 
-                    let memo = memo_bytes.clone().try_into().unwrap_or(Memo::Future(memo_bytes));
-                    wallet_txns.write().await.add_memo_to_s_note(&tx.txid(), note, memo);
+                    let memo = memo_bytes
+                        .clone()
+                        .try_into()
+                        .unwrap_or(Memo::Future(memo_bytes));
+                    wallet_txns
+                        .write()
+                        .await
+                        .add_memo_to_s_note(&tx.txid(), note, memo);
                 }
 
                 // Also scan the output to see if it can be decoded with our OutgoingViewKey
@@ -349,23 +410,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                                 // to the outgoing metadata.
                                 // If this is change (i.e., funds sent to ourself) AND has a memo, then
                                 // presumably the users is writing a memo to themself, so we will add it to
-                                // the outgoing metadata, even though it might be confusing in the UI, but hopefully
-                                // the user can make sense of it.
+                                // the outgoing metadata, even though it might be confusing in the UI, but
+                                // hopefully the user can make sense of it.
                                 match Memo::try_from(memo_bytes) {
                                     Err(_) => None,
                                     Ok(memo) => {
                                         if z_addresses.contains(&address) && memo == Memo::Empty {
                                             None
                                         } else {
-                                            Some(OutgoingTxMetadata {
-                                                address,
-                                                value: note.value,
-                                                memo,
-                                            })
+                                            Some(OutgoingTxMetadata { address, value: note.value, memo })
                                         }
-                                    }
+                                    },
                                 }
-                            }
+                            },
                             None => None,
                         }
                     })
@@ -376,10 +433,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             }
         }
 
-        // Step 4b: Scan the orchard part of the bundle to see if there are any memos. We'll also scan the orchard outputs
-        // with our OutgoingViewingKey, to see if we can decrypt outgoing metadata
+        // Step 4b: Scan the orchard part of the bundle to see if there are any memos.
+        // We'll also scan the orchard outputs with our OutgoingViewingKey, to
+        // see if we can decrypt outgoing metadata
         let o_ivks = keys.read().await.get_all_orchard_ivks();
-        let o_ovk = keys.read().await.okeys[0].fvk().to_ovk(orchard::keys::Scope::External);
+        let o_ovk = keys.read().await.okeys[0]
+            .fvk()
+            .to_ovk(orchard::keys::Scope::External);
         if let Some(o_bundle) = tx.orchard_bundle() {
             // let orchard_actions = o_bundle
             //     .actions()
@@ -387,19 +447,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             //     .map(|oa| (OrchardDomain::for_action(oa), oa))
             //     .collect::<Vec<_>>();
 
-            // let decrypts = try_note_decryption(o_ivks.as_ref(), orchard_actions.as_ref());
+            // let decrypts = try_note_decryption(o_ivks.as_ref(),
+            // orchard_actions.as_ref());
             for oa in o_bundle.actions() {
                 let domain = OrchardDomain::for_action(oa);
 
                 for (ivk_num, ivk) in o_ivks.iter().enumerate() {
                     if let Some((note, _address, memo_bytes)) = try_note_decryption(&domain, ivk, oa) {
                         if let Ok(memo) = Memo::from_bytes(&memo_bytes) {
-                            wallet_txns.write().await.add_memo_to_o_note(
-                                &tx.txid(),
-                                &keys.read().await.okeys[ivk_num].fvk(),
-                                note,
-                                memo,
-                            );
+                            wallet_txns
+                                .write()
+                                .await
+                                .add_memo_to_o_note(&tx.txid(), &keys.read().await.okeys[ivk_num].fvk(), note, memo);
                         }
                     }
                 }
@@ -421,27 +480,32 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
 
                     // If this is just our address with an empty memo, do nothing.
                     if !(u_addresses.contains(&address) && memo == Memo::Empty) {
-                        outgoing_metadatas.push(OutgoingTxMetadata {
-                            address,
-                            value: note.value().inner(),
-                            memo,
-                        });
+                        outgoing_metadatas.push(OutgoingTxMetadata { address, value: note.value().inner(), memo });
                     }
                 }
             }
         }
 
         // Step 5. Process t-address outputs
-        // If this Tx in outgoing, i.e., we recieved sent some money in this Tx, then we need to grab all transparent outputs
-        // that don't belong to us as the outgoing metadata
-        if wallet_txns.read().await.total_funds_spent_in(&tx.txid()) > 0 {
+        // If this Tx in outgoing, i.e., we recieved sent some money in this Tx, then we
+        // need to grab all transparent outputs that don't belong to us as the
+        // outgoing metadata
+        if wallet_txns
+            .read()
+            .await
+            .total_funds_spent_in(&tx.txid())
+            > 0
+        {
             is_outgoing_tx = true;
         }
 
         if is_outgoing_tx {
             if let Some(t_bundle) = tx.transparent_bundle() {
                 for vout in &t_bundle.vout {
-                    let taddr = keys.read().await.address_from_pubkeyhash(vout.script_pubkey.address());
+                    let taddr = keys
+                        .read()
+                        .await
+                        .address_from_pubkeyhash(vout.script_pubkey.address());
 
                     if taddr.is_some() && !taddrs_set.contains(taddr.as_ref().unwrap()) {
                         outgoing_metadatas.push(OutgoingTxMetadata {
@@ -452,10 +516,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                     }
                 }
 
-                // Also, if this is an outgoing transaction, then mark all the *incoming* sapling notes to this Tx as change.
-                // Note that this is also done in `WalletTxns::add_new_spent`, but that doesn't take into account transparent spends,
-                // so we'll do it again here.
-                wallet_txns.write().await.check_notes_mark_change(&tx.txid());
+                // Also, if this is an outgoing transaction, then mark all the *incoming*
+                // sapling notes to this Tx as change. Note that this is also
+                // done in `WalletTxns::add_new_spent`, but that doesn't take into account
+                // transparent spends, so we'll do it again here.
+                wallet_txns
+                    .write()
+                    .await
+                    .check_notes_mark_change(&tx.txid());
             }
         }
 
@@ -468,9 +536,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
 
         // Update price if available
         if price.is_some() {
-            wallet_txns.write().await.set_price(&tx.txid(), price);
+            wallet_txns
+                .write()
+                .await
+                .set_price(&tx.txid(), price);
         }
 
-        //info!("Finished Fetching full tx {}", tx.txid());
+        // info!("Finished Fetching full tx {}", tx.txid());
     }
 }

@@ -1,9 +1,9 @@
+use std::convert::TryFrom;
+use std::convert::TryInto;
+
 use ff::PrimeField;
 use group::GroupEncoding;
 use orchard::note_encryption::OrchardDomain;
-use std::convert::TryInto;
-
-use std::convert::TryFrom;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
@@ -79,7 +79,8 @@ impl CompactSaplingOutput {
     /// [`CompactSaplingOutput.cmu`]: #structfield.cmu
     pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
         let mut repr = [0; 32];
-        repr.as_mut().copy_from_slice(&self.cmu[..]);
+        repr.as_mut()
+            .copy_from_slice(&self.cmu[..]);
         let r = bls12_381::Scalar::from_repr(repr);
         if bool::from(r.is_some()) {
             Ok(r.unwrap())
@@ -94,7 +95,11 @@ impl CompactSaplingOutput {
     ///
     /// [`CompactSaplingOutput.epk`]: #structfield.epk
     pub fn epk(&self) -> Result<jubjub::ExtendedPoint, ()> {
-        let p = jubjub::ExtendedPoint::from_bytes(&self.epk[..].try_into().map_err(|_| ())?);
+        let p = jubjub::ExtendedPoint::from_bytes(
+            &self.epk[..]
+                .try_into()
+                .map_err(|_| ())?,
+        );
         if p.is_some().into() {
             Ok(p.unwrap())
         } else {

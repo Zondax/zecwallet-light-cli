@@ -31,7 +31,10 @@ pub struct WalletOKey {
 }
 
 impl WalletOKey {
-    pub fn new_hdkey(hdkey_num: u32, spending_key: SpendingKey) -> Self {
+    pub fn new_hdkey(
+        hdkey_num: u32,
+        spending_key: SpendingKey,
+    ) -> Self {
         let fvk = FullViewingKey::from(&spending_key);
         let address = fvk.address_at(0u64, Scope::External);
         let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
@@ -51,8 +54,10 @@ impl WalletOKey {
 
     // pub fn new_locked_hdkey(hdkey_num: u32, fvk: FullViewingKey) -> Self {
     //     let address = fvk.address_at(0u64, Scope::External);
-    //     let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
-    //     let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
+    //     let orchard_container =
+    // Receiver::Orchard(address.to_raw_address_bytes());
+    //     let unified_address =
+    // UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 
     //     WalletOKey {
     //         keytype: WalletOKeyType::HdKey,
@@ -69,8 +74,10 @@ impl WalletOKey {
     // pub fn new_imported_sk(sk: SpendingKey) -> Self {
     //     let fvk = FullViewingKey::from(&sk);
     //     let address = fvk.address_at(0u64, Scope::External);
-    //     let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
-    //     let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
+    //     let orchard_container =
+    // Receiver::Orchard(address.to_raw_address_bytes());
+    //     let unified_address =
+    // UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 
     //     Self {
     //         keytype: WalletOKeyType::ImportedSpendingKey,
@@ -86,8 +93,10 @@ impl WalletOKey {
 
     // pub fn new_imported_fullviewkey(fvk: FullViewingKey) -> Self {
     //     let address = fvk.address_at(0u64, Scope::External);
-    //     let orchard_container = Receiver::Orchard(address.to_raw_address_bytes());
-    //     let unified_address = UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
+    //     let orchard_container =
+    // Receiver::Orchard(address.to_raw_address_bytes());
+    //     let unified_address =
+    // UnifiedAddress::try_from_items(vec![orchard_container]).unwrap();
 
     //     WalletOKey {
     //         keytype: WalletOKeyType::ImportedFullViewKey,
@@ -106,7 +115,8 @@ impl WalletOKey {
     }
 
     pub fn orchard_address(&self) -> orchard::Address {
-        self.fvk.address_at(0u64, Scope::External)
+        self.fvk
+            .address_at(0u64, Scope::External)
     }
 
     pub fn fvk(&self) -> &'_ FullViewingKey {
@@ -125,10 +135,7 @@ impl WalletOKey {
             0 => Ok(WalletOKeyType::HdKey),
             1 => Ok(WalletOKeyType::ImportedSpendingKey),
             2 => Ok(WalletOKeyType::ImportedFullViewKey),
-            n => Err(io::Error::new(
-                ErrorKind::InvalidInput,
-                format!("Unknown okey type {}", n),
-            )),
+            n => Err(io::Error::new(ErrorKind::InvalidInput, format!("Unknown okey type {}", n))),
         }?;
 
         let locked = inp.read_u8()? > 0;
@@ -157,19 +164,13 @@ impl WalletOKey {
         // None
         let nonce = Optional::read(&mut inp, |r| Vector::read(r, |r| r.read_u8()))?;
 
-        Ok(WalletOKey {
-            locked,
-            keytype,
-            sk,
-            fvk,
-            unified_address,
-            hdkey_num,
-            enc_key,
-            nonce,
-        })
+        Ok(WalletOKey { locked, keytype, sk, fvk, unified_address, hdkey_num, enc_key, nonce })
     }
 
-    pub fn write<W: Write>(&self, mut out: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut out: W,
+    ) -> io::Result<()> {
         out.write_u8(Self::serialized_version())?;
 
         out.write_u32::<LittleEndian>(self.keytype.clone() as u32)?;
@@ -179,7 +180,8 @@ impl WalletOKey {
         // HDKey num
         Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
 
-        // Note that the Unified address is not written, it is derived from the FVK/SK on reading.
+        // Note that the Unified address is not written, it is derived from the FVK/SK
+        // on reading.
 
         // FVK
         FullViewingKey::write(&self.fvk, &mut out)?;
@@ -191,13 +193,9 @@ impl WalletOKey {
         })?;
 
         // Write enc_key
-        Optional::write(&mut out, self.enc_key.as_ref(), |o, v| {
-            Vector::write(o, &v[..], |o, n| o.write_u8(*n))
-        })?;
+        Optional::write(&mut out, self.enc_key.as_ref(), |o, v| Vector::write(o, &v[..], |o, n| o.write_u8(*n)))?;
 
         // Write nonce
-        Optional::write(&mut out, self.nonce.as_ref(), |o, v| {
-            Vector::write(o, &v[..], |o, n| o.write_u8(*n))
-        })
+        Optional::write(&mut out, self.nonce.as_ref(), |o, v| Vector::write(o, &v[..], |o, n| o.write_u8(*n)))
     }
 }
