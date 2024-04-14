@@ -104,8 +104,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 let last_progress = last_progress.clone();
 
                 workers.push(tokio::spawn(async move {
-                    // It is possible that we recieve the same txid multiple times, so we keep track
-                    // of all the txids that were fetched
+                    // It is possible that we receive the same txid multiple times, so we
+                    // keep track of all the txids that were fetched
                     let tx = {
                         // Fetch the TxId from LightwalletD and process all the parts of it.
                         let (tx, rx) = oneshot::channel();
@@ -319,6 +319,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 }
             }
         }
+
         // Collect all our z addresses, to check for change
         let z_addresses: HashSet<String> = HashSet::from_iter(
             keys.read()
@@ -351,7 +352,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         // Step 4a: Scan shielded sapling outputs to see if anyone of them is us, and if
         // it is, extract the memo. Note that if this is invoked by a
         // transparent transaction, and we have not seen this Tx from the
-        // trial_decryptions processor, the Note might not exist, and the memo
+        // trial_decryption processor, the Note might not exist, and the memo
         // updating might be a No-Op. That's Ok, the memo will get updated when this Tx
         // is scanned a second time by the Full Tx Fetcher
         let mut outgoing_metadatas = vec![];

@@ -80,12 +80,12 @@ impl Message {
             .create_note(value, rseed)
             .unwrap();
 
-        // CMU is used in the out_cuphertext. Technically this is not needed to recover
+        // CMU is used in the out_ciphertext. Technically this is not needed to recover
         // the note by the receiver, but it is needed to recover the note by the
         // sender.
         let cmu = note.cmu();
 
-        // Create the note encrytion object
+        // Create the note encryption object
         let ne = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             ovk,
             note,
@@ -93,7 +93,7 @@ impl Message {
             self.memo.clone().into(),
         );
 
-        // EPK, which needs to be sent to the reciever.
+        // EPK, which needs to be sent to the receiver.
         let epk = EphemeralKeyBytes::from(ne.epk().to_bytes());
 
         // enc_ciphertext is the encrypted note, out_ciphertext is the outgoing cipher
@@ -134,7 +134,7 @@ impl Message {
         ivk: &SaplingIvk,
     ) -> io::Result<Message> {
         if data.len() != 1 + Message::magic_word().len() + 32 + 32 + ENC_CIPHERTEXT_SIZE {
-            return Err(io::Error::new(ErrorKind::InvalidData, "Incorrect encrypred payload size".to_string()));
+            return Err(io::Error::new(ErrorKind::InvalidData, "Incorrect encrypted payload size".to_string()));
         }
 
         let mut reader = Bytes::from(data).into_buf().reader();
@@ -300,7 +300,6 @@ pub mod tests {
         assert!(dec_success.is_err());
 
         // Create a new, random EPK
-
         let mut rseed_bytes = [0u8; 32];
         rng.fill_bytes(&mut rseed_bytes);
         let rseed = Rseed::AfterZip212(rseed_bytes);

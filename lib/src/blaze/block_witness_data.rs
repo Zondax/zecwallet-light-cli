@@ -406,9 +406,9 @@ impl BlockAndWitnessData {
             while let Some(cb) = rx.recv().await {
                 let orchard_witnesses = orchard_witnesses.clone();
 
-                // println!("block_witness recieved {:?}", cb.height);
+                // println!("block_witness received {:?}", cb.height);
                 // We'll process batch_size (1_000) blocks at a time.
-                // println!("Recieved block # {}", cb.height);
+                // println!("Received block # {}", cb.height);
                 if cb.height % batch_size == 0 {
                     // println!("Batch size hit at height {} with len {}", cb.height, blks.len());
                     if !blks.is_empty() {

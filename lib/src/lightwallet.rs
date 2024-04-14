@@ -184,7 +184,7 @@ pub struct LightWallet<P> {
     // Non-serialized fields
     config: LightClientConfig<P>,
 
-    // Heighest verified block
+    // Highest verified block
     pub(crate) verified_tree: Arc<RwLock<Option<TreeState>>>,
 
     // The Orchard incremental tree
@@ -570,7 +570,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         self.send_progress.read().await.clone()
     }
 
-    // Set the previous send's status as an error
+    // Set the previous send status as an error
     async fn set_send_error(
         &self,
         e: String,
@@ -720,7 +720,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             // If the viewing key exists, and is now being upgraded to the spending key,
             // replace it in-place
             if maybe_existing_zkey.is_some() {
-                let mut existing_zkey = maybe_existing_zkey.unwrap();
+                let existing_zkey = maybe_existing_zkey.unwrap();
                 existing_zkey.extsk = Some(extsk);
                 existing_zkey.keytype = WalletZKeyType::ImportedSpendingKey;
                 existing_zkey.zaddress.clone()
@@ -1197,7 +1197,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .collect();
 
         // Attempt decryption with all available ivks, one at a time. This is pretty
-        // fast, so need need for fancy multithreading
+        // fast, so no need for fancy multithreading
         for ivk in ivks {
             if let Ok(msg) = Message::decrypt(&enc, &ivk) {
                 // If decryption succeeded for this IVK, return the decrypted memo and the
@@ -1427,6 +1427,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let mut s_notes = vec![];
 
         let mut remaining_amount = target_amount - transparent_value_selected;
+
         if prefer_orchard {
             // Collect orchard notes first
             o_notes = self
@@ -1460,6 +1461,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // If we still don't have enough, then select across the other pool
         remaining_amount =
             target_amount - (transparent_value_selected + orchard_value_selected + sapling_value_selected).unwrap();
+
         if prefer_orchard {
             // Select sapling notes
             s_notes = self
@@ -1540,8 +1542,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
         println!("0: Creating transaction sending {} ztoshis to {} addresses", total_value, tos.len());
 
-        // Convert address (str) to RecepientAddress and value to Amount
-        let recepients = tos
+        // Convert address (str) to RecipientAddress and value to Amount
+        let recipients = tos
             .iter()
             .map(|to| {
                 let ra = match address::RecipientAddress::decode(&self.config.get_params(), to.0) {
@@ -1560,7 +1562,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>()?;
 
         // Calculate how much we're sending to each type of address
-        let (_t_out, s_out, _o_out) = recepients
+        let (_t_out, s_out, _o_out) = recipients
             .iter()
             .map(|(to, value, _)| match to {
                 address::RecipientAddress::Unified(_) => (0, 0, value.into()),
@@ -1611,7 +1613,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         if selected_value < target_amount {
             let e = format!(
                 "Insufficient verified funds. Have {} zats, need {} zats. NOTE: funds need at least {} confirmations before they can be spent.",
-                u64::from(selected_value), u64::from(target_amount), self.config.anchor_offset + 1
+                u64::from(selected_value),
+                u64::from(target_amount),
+                self.config.anchor_offset + 1
             );
             error!("{}", e);
             return Err(e);
@@ -1646,7 +1650,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     },
                     None => {
                         // Something is very wrong
-                        let e = format!("Couldn't find the secreykey for taddr {}", utxo.address);
+                        let e = format!("Couldn't find the key for taddr {}", utxo.address);
                         error!("{}", e);
 
                         Err(zcash_primitives::transaction::builder::Error::InvalidAmount)
@@ -1699,7 +1703,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         let mut total_z_recepients = 0u32;
         let mut total_o_recepients = 0u32;
-        for (to, value, memo) in recepients {
+        for (to, value, memo) in recipients {
             // Compute memo if it exists
             let encoded_memo = match memo {
                 None => MemoBytes::empty(),
@@ -1846,7 +1850,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             // Mark sapling and orchard notes as unconfirmed spent
             let mut txs = self.txns.write().await;
             for selected in o_notes {
-                let mut spent_note = txs
+                let spent_note = txs
                     .current
                     .get_mut(&selected.txid)
                     .unwrap()
@@ -1863,7 +1867,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             }
 
             for selected in s_notes {
-                let mut spent_note = txs
+                let spent_note = txs
                     .current
                     .get_mut(&selected.txid)
                     .unwrap()
@@ -1876,7 +1880,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
             // Mark this utxo as unconfirmed spent
             for utxo in utxos {
-                let mut spent_utxo = txs
+                let spent_utxo = txs
                     .current
                     .get_mut(&utxo.txid)
                     .unwrap()

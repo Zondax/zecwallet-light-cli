@@ -230,7 +230,7 @@ mod test {
                 }));
             }
 
-            // Dispatch a set of recievers
+            // Dispatch a set of receivers
             result_tx.send(tx_rs).unwrap();
 
             let total = try_join_all(tx_rs_workers)

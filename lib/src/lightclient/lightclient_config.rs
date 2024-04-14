@@ -145,7 +145,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 monitor_mempool: false,
                 sapling_activation_height,
                 anchor_offset: DEFAULT_ANCHOR_OFFSET,
-                data_dir: data_dir,
+                data_dir,
                 params,
             };
 
