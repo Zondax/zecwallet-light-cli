@@ -3,3 +3,5 @@
 /procgov
 .DS_Store
 *.json.txt
+/build
+.idea

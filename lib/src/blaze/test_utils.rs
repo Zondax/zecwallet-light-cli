@@ -1,38 +1,45 @@
 use std::{convert::TryInto, sync::Arc};
 
-use crate::{
-    compact_formats::{CompactBlock, CompactOutput, CompactSpend, CompactTx},
-    lightclient::test_server::TestServerData,
-    lightwallet::{data::BlockData, keys::ToBase58Check},
-};
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
-use jubjub::ExtendedPoint;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
-
+use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
+use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
+    consensus::{self, BlockHeight, BranchId, TEST_NETWORK},
     constants::SPENDING_KEY_GENERATOR,
     keys::OutgoingViewingKey,
     legacy::{Script, TransparentAddress},
     memo::Memo,
     merkle_tree::{CommitmentTree, Hashable, IncrementalWitness, MerklePath},
-    note_encryption::SaplingNoteEncryption,
-    primitives::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
-    prover::TxProver,
-    redjubjub::Signature,
-    sapling::Node,
+    sapling::{
+        note_encryption::SaplingDomain,
+        prover::TxProver,
+        redjubjub::{self, Signature},
+        Node,
+    },
+    sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
     transaction::{
-        components::{Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
-        Transaction, TransactionData, TxId,
+        components::{sapling, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
+        Authorized, Transaction, TransactionData, TxId,
     },
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 use zcash_proofs::sapling::SaplingProvingContext;
+
+use crate::{
+    compact_formats::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx},
+    lightclient::{
+        faketx::{clone_transactiondata, new_transactiondata},
+        test_server::TestServerData,
+    },
+    lightwallet::{data::BlockData, keys::ToBase58Check},
+};
 
 pub fn random_u8_32() -> [u8; 32] {
     let mut b = [0u8; 32];
@@ -72,47 +79,54 @@ pub fn list_all_witness_nodes(cb: &CompactBlock) -> Vec<Node> {
 
 pub struct FakeTransaction {
     pub ctx: CompactTx,
-    pub td: TransactionData,
+    pub td: TransactionData<Authorized>,
     pub taddrs_involved: Vec<String>,
 }
 
 impl FakeTransaction {
     pub fn new() -> Self {
-        Self {
-            ctx: CompactTx::default(),
-            td: TransactionData::new(),
-            taddrs_involved: vec![],
-        }
+        Self { ctx: CompactTx::default(), td: new_transactiondata(), taddrs_involved: vec![] }
     }
 
     // Add a dummy compact output with given value sending it to 'to', and encode
     // the output with the ovk if available
-    fn add_sapling_output(&mut self, value: u64, ovk: Option<OutgoingViewingKey>, to: &PaymentAddress) -> Note {
+    fn add_sapling_output(
+        &mut self,
+        value: u64,
+        ovk: Option<OutgoingViewingKey>,
+        to: &PaymentAddress,
+    ) -> Note {
         // Create a fake Note for the account
         let mut rng = OsRng;
+
+        let mut rseed_bytes = [0u8; 32];
+        rng.fill_bytes(&mut rseed_bytes);
+
         let note = Note {
             g_d: to.diversifier().g_d().unwrap(),
             pk_d: to.pk_d().clone(),
             value,
-            rseed: Rseed::BeforeZip212(jubjub::Fr::random(rng)),
+            rseed: Rseed::AfterZip212(rseed_bytes),
         };
 
-        let mut encryptor = SaplingNoteEncryption::new(ovk, note.clone(), to.clone(), Memo::default().into(), &mut rng);
+        let encryptor = NoteEncryption::<SaplingDomain<consensus::Network>>::new(
+            ovk,
+            note.clone(),
+            to.clone(),
+            Memo::default().into(),
+        );
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
-        let cv = ValueCommitment {
-            value,
-            randomness: rcv.clone(),
-        };
+        let cv = ValueCommitment { value, randomness: rcv.clone() };
 
         let cmu = note.cmu();
         let od = OutputDescription {
             cv: cv.commitment().into(),
             cmu: note.cmu(),
-            ephemeral_key: ExtendedPoint::from(*encryptor.epk()),
+            ephemeral_key: EphemeralKeyBytes(encryptor.epk().to_bytes()),
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv.commitment().into(), &cmu, &mut rng),
             zkproof: [0; GROTH_PROOF_SIZE],
         };
 
@@ -123,67 +137,155 @@ impl FakeTransaction {
         let enc_ciphertext = encryptor.encrypt_note_plaintext();
 
         // Create a fake CompactBlock containing the note
-        let mut cout = CompactOutput::default();
+        let mut cout = CompactSaplingOutput::default();
         cout.cmu = cmu;
         cout.epk = epk;
-        cout.ciphertext = enc_ciphertext[..52].to_vec();
+        cout.ciphertext = enc_ciphertext[.. 52].to_vec();
 
-        self.td.shielded_outputs.push(od);
-        self.td.binding_sig = Signature::read(&vec![0u8; 64][..]).ok();
+        let mut sapling_bundle = if self.td.sapling_bundle().is_some() {
+            self.td
+                .sapling_bundle()
+                .unwrap()
+                .clone()
+        } else {
+            sapling::Bundle {
+                shielded_spends: vec![],
+                shielded_outputs: vec![],
+                value_balance: Amount::zero(),
+                authorization: sapling::Authorized {
+                    binding_sig: Signature::read(&vec![0u8; 64][..]).expect("Signature error"),
+                },
+            }
+        };
+        sapling_bundle.shielded_outputs.push(od);
+
+        self.td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            self.td.transparent_bundle().cloned(),
+            self.td.sprout_bundle().cloned(),
+            Some(sapling_bundle),
+            self.td.orchard_bundle().cloned(),
+        );
 
         self.ctx.outputs.push(cout);
 
         note
     }
 
-    pub fn add_tx_spending(&mut self, nf: &Nullifier, value: u64, ovk: &OutgoingViewingKey, to: &PaymentAddress) {
+    pub fn add_tx_spending(
+        &mut self,
+        nf: &Nullifier,
+        value: u64,
+        ovk: &OutgoingViewingKey,
+        to: &PaymentAddress,
+    ) {
         let _ = self.add_sapling_output(value, Some(ovk.clone()), to);
 
-        let mut cs = CompactSpend::default();
+        let mut cs = CompactSaplingSpend::default();
         cs.nf = nf.to_vec();
         self.ctx.spends.push(cs);
 
-        // We should be adding the nullifier to the full tx (tx.shielded_spends) as well, but we don't use it,
-        // so we pretend it doen't exist :)
+        // We should be adding the nullifier to the full tx (tx.shielded_spends)
+        // as well, but we don't use it, so we pretend it doen't exist
+        // :)
     }
 
     // Add a new tx into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_tx_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> Note {
-        let to = extfvk.default_address().unwrap().1;
+    pub fn add_tx_paying(
+        &mut self,
+        extfvk: &ExtendedFullViewingKey,
+        value: u64,
+    ) -> Note {
+        let to = extfvk.default_address().1;
         let note = self.add_sapling_output(value, None, &to);
 
         note
     }
 
     // Add a t output which will be paid to the given PubKey
-    pub fn add_t_output(&mut self, pk: &PublicKey, taddr: String, value: u64) {
+    pub fn add_t_output(
+        &mut self,
+        pk: &PublicKey,
+        taddr: String,
+        value: u64,
+    ) {
         let mut hash160 = ripemd160::Ripemd160::new();
         hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
 
         let taddr_bytes = hash160.finalize();
 
-        self.td.vout.push(TxOut {
+        let mut t_bundle = if self.td.transparent_bundle().is_some() {
+            self.td
+                .transparent_bundle()
+                .unwrap()
+                .clone()
+        } else {
+            transparent::Bundle { vin: vec![], vout: vec![], authorization: transparent::Authorized {} }
+        };
+
+        t_bundle.vout.push(TxOut {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
         });
+        self.td.transparent_bundle = Some(t_bundle);
+
+        self.td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(t_bundle),
+            self.td.sprout_bundle().cloned(),
+            self.td.sapling_bundle().cloned(),
+            self.td.orchard_bundle().cloned(),
+        );
 
         self.taddrs_involved.push(taddr)
     }
 
     // Spend the given utxo
-    pub fn add_t_input(&mut self, txid: TxId, n: u32, taddr: String) {
-        self.td.vin.push(TxIn {
-            prevout: OutPoint::new(txid.0, n),
+    pub fn add_t_input(
+        &mut self,
+        txid: TxId,
+        n: u32,
+        taddr: String,
+    ) {
+        let mut t_bundle = if self.td.transparent_bundle().is_some() {
+            self.td
+                .transparent_bundle()
+                .unwrap()
+                .clone()
+        } else {
+            transparent::Bundle { vin: vec![], vout: vec![], authorization: transparent::Authorized {} }
+        };
+
+        t_bundle.vin.push(TxIn {
+            prevout: OutPoint::new(*txid.as_ref(), n),
             script_sig: Script { 0: vec![] },
             sequence: 0,
         });
+
+        self.td = TransactionData::from_parts(
+            self.td.version(),
+            self.td.consensus_branch_id(),
+            self.td.lock_time(),
+            self.td.expiry_height(),
+            Some(t_bundle),
+            self.td.sprout_bundle().cloned(),
+            self.td.sapling_bundle().cloned(),
+            self.td.orchard_bundle().cloned(),
+        );
+
         self.taddrs_involved.push(taddr);
     }
 
     pub fn into_tx(mut self) -> (CompactTx, Transaction, Vec<String>) {
         let tx = self.td.freeze().unwrap();
-        self.ctx.hash = tx.txid().clone().0.to_vec();
+        self.ctx.hash = tx.txid().clone().as_ref().to_vec();
 
         (self.ctx, tx, self.taddrs_involved)
     }
@@ -195,7 +297,10 @@ pub struct FakeCompactBlock {
 }
 
 impl FakeCompactBlock {
-    pub fn new(height: u64, prev_hash: BlockHash) -> Self {
+    pub fn new(
+        height: u64,
+        prev_hash: BlockHash,
+    ) -> Self {
         // Create a fake Note for the account
         let mut rng = OsRng;
 
@@ -205,28 +310,36 @@ impl FakeCompactBlock {
         cb.hash.resize(32, 0);
         rng.fill_bytes(&mut cb.hash);
 
-        cb.prev_hash.extend_from_slice(&prev_hash.0);
+        cb.prev_hash
+            .extend_from_slice(&prev_hash.0);
 
         Self { block: cb, height }
     }
 
-    pub fn add_txs(&mut self, ctxs: Vec<CompactTx>) {
+    pub fn add_txs(
+        &mut self,
+        ctxs: Vec<CompactTx>,
+    ) {
+        println!("Adding {} txns to fake server", ctxs.len());
         self.block.vtx.extend(ctxs);
     }
 
     // Add a new tx into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_random_tx(&mut self, num_outputs: usize) {
+    pub fn add_random_tx(
+        &mut self,
+        num_outputs: usize,
+    ) {
         let xsk_m = ExtendedSpendingKey::master(&[1u8; 32]);
         let extfvk = ExtendedFullViewingKey::from(&xsk_m);
 
-        let to = extfvk.default_address().unwrap().1;
+        let to = extfvk.default_address().1;
         let value = Amount::from_u64(1).unwrap();
 
         let mut ctx = CompactTx::default();
         ctx.hash = random_u8_32().to_vec();
 
-        for _ in 0..num_outputs {
+        for _ in 0 .. num_outputs {
             // Create a fake Note for the account
             let note = Note {
                 g_d: to.diversifier().g_d().unwrap(),
@@ -236,8 +349,10 @@ impl FakeCompactBlock {
             };
 
             // Create a fake CompactBlock containing the note
-            let mut cout = CompactOutput::default();
+            let mut cout = CompactSaplingOutput::default();
             cout.cmu = note.cmu().to_bytes().to_vec();
+            cout.epk = [0u8; 32].to_vec();
+            cout.ciphertext = [0u8; 52].to_vec();
 
             ctx.outputs.push(cout);
         }
@@ -266,73 +381,93 @@ pub struct FakeCompactBlockList {
 
 impl FakeCompactBlockList {
     pub fn new(len: u64) -> Self {
-        let mut s = Self {
-            blocks: vec![],
-            txns: vec![],
-            prev_hash: BlockHash([0u8; 32]),
-            next_height: 1,
-        };
+        let mut s = Self { blocks: vec![], txns: vec![], prev_hash: BlockHash([0u8; 32]), next_height: 1 };
 
         s.add_blocks(len);
 
         s
     }
 
-    pub async fn add_pending_sends(&mut self, data: &Arc<RwLock<TestServerData>>) {
-        let sent_txns = data.write().await.sent_txns.split_off(0);
+    pub async fn add_pending_sends<P: consensus::Parameters + Send + Sync + 'static>(
+        &mut self,
+        data: &Arc<RwLock<TestServerData<P>>>,
+    ) {
+        let sent_txns = data
+            .write()
+            .await
+            .sent_txns
+            .split_off(0);
 
         for rtx in sent_txns {
-            let tx = Transaction::read(&rtx.data[..]).unwrap();
+            let tx = Transaction::read(
+                &rtx.data[..],
+                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(rtx.height as u32)),
+            )
+            .unwrap();
             let mut ctx = CompactTx::default();
 
-            for out in &tx.shielded_outputs {
-                let mut cout = CompactOutput::default();
-                cout.cmu = out.cmu.to_repr().to_vec();
-                cout.epk = out.ephemeral_key.to_bytes().to_vec();
-                cout.ciphertext = out.enc_ciphertext[..52].to_vec();
+            if let Some(s_bundle) = tx.sapling_bundle() {
+                for out in &s_bundle.shielded_outputs {
+                    let mut cout = CompactSaplingOutput::default();
+                    cout.cmu = out.cmu.to_repr().to_vec();
+                    cout.epk = out.ephemeral_key.0.to_vec();
+                    cout.ciphertext = out.enc_ciphertext[.. 52].to_vec();
 
-                ctx.outputs.push(cout);
-            }
+                    ctx.outputs.push(cout);
+                }
 
-            for spend in &tx.shielded_spends {
-                let mut cs = CompactSpend::default();
-                cs.nf = spend.nullifier.to_vec();
+                for spend in &s_bundle.shielded_spends {
+                    let mut cs = CompactSaplingSpend::default();
+                    cs.nf = spend.nullifier.to_vec();
 
-                ctx.spends.push(cs);
+                    ctx.spends.push(cs);
+                }
             }
 
             let config = data.read().await.config.clone();
-            let taddrs = tx
-                .vout
-                .iter()
-                .filter_map(|vout| {
-                    if let Some(TransparentAddress::PublicKey(taddr_hash)) = vout.script_pubkey.address() {
-                        let taddr = taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
-                        Some(taddr)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
+            let taddrs = if let Some(t_bundle) = tx.transparent_bundle() {
+                t_bundle
+                    .vout
+                    .iter()
+                    .filter_map(|vout| {
+                        if let Some(TransparentAddress::PublicKey(taddr_hash)) = vout.script_pubkey.address() {
+                            let taddr = taddr_hash.to_base58check(&config.base58_pubkey_address(), &[]);
+                            Some(taddr)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                vec![]
+            };
 
             let new_block_height = {
                 let new_block = self.add_empty_block();
-                ctx.hash = tx.txid().0.to_vec();
+                ctx.hash = tx.txid().as_ref().to_vec();
                 new_block.add_txs(vec![ctx]);
                 new_block.height
             };
-            self.txns.push((tx.clone(), new_block_height, taddrs));
+            self.txns
+                .push((tx, new_block_height, taddrs));
         }
     }
 
-    pub fn add_ftx(&mut self, ftx: FakeTransaction) -> (Transaction, u64) {
+    pub fn add_ftx(
+        &mut self,
+        ftx: FakeTransaction,
+    ) -> (Transaction, u64) {
         let (ctx, tx, taddrs) = ftx.into_tx();
 
-        let height = self.next_height;
-        self.txns.push((tx.clone(), height, taddrs));
-        self.add_empty_block().add_txs(vec![ctx]);
+        let (tx1, tx2) = clone_transactiondata(tx.into_data());
 
-        (tx, height)
+        let height = self.next_height;
+        self.txns
+            .push((tx1.freeze().unwrap(), height, taddrs));
+        self.add_empty_block()
+            .add_txs(vec![ctx]);
+
+        (tx2.freeze().unwrap(), height)
     }
 
     pub fn add_tx_spending(
@@ -352,7 +487,11 @@ impl FakeCompactBlockList {
 
     // Add a new tx into the block, paying the given address the amount.
     // Returns the nullifier of the new note.
-    pub fn add_tx_paying(&mut self, extfvk: &ExtendedFullViewingKey, value: u64) -> (Transaction, u64, Note) {
+    pub fn add_tx_paying(
+        &mut self,
+        extfvk: &ExtendedFullViewingKey,
+        value: u64,
+    ) -> (Transaction, u64, Note) {
         let mut ftx = FakeTransaction::new();
         let note = ftx.add_tx_paying(extfvk, value);
 
@@ -370,17 +509,20 @@ impl FakeCompactBlockList {
         self.blocks.last_mut().unwrap()
     }
 
-    pub fn add_blocks(&mut self, len: u64) -> &mut Self {
+    pub fn add_blocks(
+        &mut self,
+        len: u64,
+    ) -> &mut Self {
         let nexth = self.next_height;
 
-        for i in nexth..(nexth + len) {
+        for i in nexth .. (nexth + len) {
             let mut b = FakeCompactBlock::new(i, self.prev_hash);
 
             self.next_height = i + 1;
             self.prev_hash = b.block.hash();
 
             // Add 2 transactions, each with some random Compact Outputs to this block
-            for _ in 0..2 {
+            for _ in 0 .. 2 {
                 b.add_random_tx(2);
             }
 
@@ -391,7 +533,10 @@ impl FakeCompactBlockList {
     }
 
     pub fn into_blockdatas(&mut self) -> Vec<BlockData> {
-        let blocks = self.blocks.drain(..).collect::<Vec<_>>();
+        let blocks = self
+            .blocks
+            .drain(..)
+            .collect::<Vec<_>>();
 
         blocks
             .into_iter()
@@ -401,9 +546,16 @@ impl FakeCompactBlockList {
     }
 
     pub fn into_compact_blocks(&mut self) -> Vec<CompactBlock> {
-        let blocks = self.blocks.drain(..).collect::<Vec<_>>();
+        let blocks = self
+            .blocks
+            .drain(..)
+            .collect::<Vec<_>>();
 
-        blocks.into_iter().map(|fcb| fcb.block).rev().collect()
+        blocks
+            .into_iter()
+            .map(|fcb| fcb.block)
+            .rev()
+            .collect()
     }
 
     pub fn into_txns(&mut self) -> Vec<(Transaction, u64, Vec<String>)> {
@@ -430,14 +582,7 @@ impl TxProver for FakeTxProver {
         value: u64,
         _anchor: bls12_381::Scalar,
         _merkle_path: MerklePath<Node>,
-    ) -> Result<
-        (
-            [u8; GROTH_PROOF_SIZE],
-            jubjub::ExtendedPoint,
-            zcash_primitives::redjubjub::PublicKey,
-        ),
-        (),
-    > {
+    ) -> Result<([u8; GROTH_PROOF_SIZE], jubjub::ExtendedPoint, redjubjub::PublicKey), ()> {
         let zkproof = [0u8; GROTH_PROOF_SIZE];
 
         let mut rng = OsRng;
@@ -448,8 +593,7 @@ impl TxProver for FakeTxProver {
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
 
-        let rk = zcash_primitives::redjubjub::PublicKey(proof_generation_key.ak.clone().into())
-            .randomize(ar, SPENDING_KEY_GENERATOR);
+        let rk = redjubjub::PublicKey(proof_generation_key.ak.clone().into()).randomize(ar, SPENDING_KEY_GENERATOR);
 
         Ok((zkproof, value_commitment, rk))
     }
@@ -483,5 +627,51 @@ impl TxProver for FakeTxProver {
     ) -> Result<Signature, ()> {
         let fake_bytes = vec![0u8; 64];
         Signature::read(&fake_bytes[..]).map_err(|_e| ())
+    }
+}
+
+#[cfg(feature = "hsm-compat")]
+impl zcash_hsmbuilder::txprover::HsmTxProver for FakeTxProver {
+    type SaplingProvingContext = <Self as TxProver>::SaplingProvingContext;
+
+    fn new_sapling_proving_context(&self) -> Self::SaplingProvingContext {
+        TxProver::new_sapling_proving_context(self)
+    }
+
+    fn spend_proof(
+        &self,
+        ctx: &mut Self::SaplingProvingContext,
+        proof_generation_key: ProofGenerationKey,
+        diversifier: Diversifier,
+        rseed: Rseed,
+        ar: jubjub::Fr,
+        value: u64,
+        anchor: bls12_381::Scalar,
+        merkle_path: MerklePath<Node>,
+        _: jubjub::Fr,
+    ) -> Result<([u8; GROTH_PROOF_SIZE], jubjub::ExtendedPoint, zcash_primitives::sapling::redjubjub::PublicKey), ()>
+    {
+        TxProver::spend_proof(self, ctx, proof_generation_key, diversifier, rseed, ar, value, anchor, merkle_path)
+    }
+
+    fn output_proof(
+        &self,
+        ctx: &mut Self::SaplingProvingContext,
+        esk: jubjub::Fr,
+        payment_address: PaymentAddress,
+        rcm: jubjub::Fr,
+        value: u64,
+        _: jubjub::Fr,
+    ) -> ([u8; GROTH_PROOF_SIZE], jubjub::ExtendedPoint) {
+        TxProver::output_proof(self, ctx, esk, payment_address, rcm, value)
+    }
+
+    fn binding_sig(
+        &self,
+        ctx: &mut Self::SaplingProvingContext,
+        value_balance: Amount,
+        sighash: &[u8; 32],
+    ) -> Result<Signature, ()> {
+        TxProver::binding_sig(self, ctx, value_balance, sighash)
     }
 }
