@@ -3,7 +3,6 @@ use std::sync::mpsc;
 use secp256k1::PublicKey as SecpPublicKey;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
-    consensus::BranchId,
     keys::OutgoingViewingKey,
     legacy::TransparentAddress,
     memo::MemoBytes,
@@ -102,7 +101,6 @@ pub trait Builder {
     /// builder to send the number of items processed so far
     async fn build(
         mut self,
-        consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
         fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error>;

@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::{
     cmp,
     collections::HashMap,
@@ -18,7 +17,7 @@ use zcash_client_backend::{
 };
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::{
-    consensus::{self, BlockHeight, BranchId},
+    consensus::{self, BlockHeight},
     legacy::Script,
     memo::{Memo, MemoBytes},
     transaction::components::{Amount, OutPoint, TxOut},
@@ -1289,7 +1288,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     pub async fn send_to_address<F, Fut, Pr: TxProver + Send + Sync>(
         &self,
-        consensus_branch_id: u32,
         prover: Pr,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
@@ -1304,7 +1302,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         // Call the internal function
         match self
-            .send_to_address_internal(consensus_branch_id, prover, transparent_only, tos, broadcast_fn)
+            .send_to_address_internal(prover, transparent_only, tos, broadcast_fn)
             .await
         {
             Ok((txid, rawtx, fees)) => {
@@ -1322,7 +1320,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     async fn send_to_address_internal<F, Fut, Pr: TxProver + Send + Sync>(
         &self,
-        consensus_branch_id: u32,
         prover: Pr,
         transparent_only: bool,
         tos: Vec<(&str, u64, Option<String>)>,
@@ -1539,7 +1536,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         println!("{}: Building transaction", now() - start_time);
         let (tx, _) = match builder
-            .build(BranchId::try_from(consensus_branch_id).unwrap(), &prover, fees.into())
+            .build(&prover, fees.into())
             .await
         {
             Ok(res) => {

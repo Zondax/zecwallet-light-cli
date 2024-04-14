@@ -870,7 +870,6 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
 
     async fn build(
         mut self,
-        consensus_branch_id: BranchId,
         prover: &(impl TxProver + Send + Sync),
         fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
@@ -883,7 +882,7 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
                 fee,
                 &mut OsRng,
                 self.target_height.into(),
-                consensus_branch_id,
+                BranchId::Sapling,
                 None,
                 self.progress_notifier,
             )

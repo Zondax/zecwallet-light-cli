@@ -2,7 +2,6 @@ use std::sync::mpsc;
 
 use rand::rngs::OsRng;
 use secp256k1::PublicKey as SecpPublicKey;
-use zcash_primitives::consensus::BranchId;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
@@ -164,7 +163,6 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
 
     async fn build(
         mut self,
-        _: BranchId,
         prover: &(impl TxProver + Send + Sync),
         _: u64, // TODO: pass fee to builder
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {

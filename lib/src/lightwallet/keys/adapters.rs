@@ -11,7 +11,6 @@ use jubjub::AffinePoint;
 use secp256k1::PublicKey as SecpPublicKey;
 use thiserror::Error;
 use zcash_client_backend::encoding::encode_payment_address;
-use zcash_primitives::consensus::BranchId;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::Transaction;
 use zcash_primitives::{
@@ -654,18 +653,17 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
 
     async fn build(
         mut self,
-        consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
         fee: u64,
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         match self {
             Self::Memory(this) => this
-                .build(consensus, prover, fee)
+                .build(prover, fee)
                 .await
                 .map_err(Into::into),
             #[cfg(feature = "ledger-support")]
             Self::Ledger(this) => this
-                .build(consensus, prover, fee)
+                .build(prover, fee)
                 .await
                 .map_err(Into::into),
         }
