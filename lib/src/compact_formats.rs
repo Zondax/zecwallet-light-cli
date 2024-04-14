@@ -1,7 +1,9 @@
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
+use ff::PrimeField;
 use group::GroupEncoding;
+use orchard::note_encryption::OrchardDomain;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
@@ -79,10 +81,7 @@ impl CompactSaplingOutput {
         let mut repr = [0; 32];
         repr.as_mut()
             .copy_from_slice(&self.cmu[..]);
-
-        let res = bls12_381::Scalar::from_bytes(&repr);
-        let r = if res.is_some().into() { Some(res.unwrap()) } else { None };
-
+        let r = bls12_381::Scalar::from_repr(repr);
         if bool::from(r.is_some()) {
             Ok(r.unwrap())
         } else {
@@ -123,4 +122,18 @@ impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactSaplin
 
 pub fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
     <&[T; N]>::try_from(&vec[..]).unwrap()
+}
+
+impl ShieldedOutput<OrchardDomain, 52_usize> for CompactOrchardAction {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes::from(*vec_to_array(&self.ephemeral_key))
+    }
+
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        *vec_to_array(&self.cmx)
+    }
+
+    fn enc_ciphertext(&self) -> &[u8; 52] {
+        vec_to_array(&self.ciphertext)
+    }
 }

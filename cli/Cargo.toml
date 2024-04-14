@@ -5,9 +5,9 @@ edition = "2018"
 
 [dependencies]
 rustyline = "5.0.6"
-clap = "2.33"
+clap = "3"
 log = "0.4"
-shellwords = "1.0.0"
+shellwords = "1"
 json = "0.12.0"
 http = "0.2"
 

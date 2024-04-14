@@ -2,7 +2,7 @@ use std::{
     cmp,
     collections::HashMap,
     io::{self, Error, ErrorKind, Read, Write},
-    sync::{atomic::AtomicU64, mpsc, Arc},
+    sync::{Arc, atomic::AtomicU64, mpsc},
     time::SystemTime,
 };
 
@@ -24,16 +24,6 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use self::{
-    data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
-    keys::{InMemoryKeys, Keystores, TxProver},
-    message::Message,
-    wallet_txns::WalletTxns,
-};
-use crate::compact_formats::TreeState;
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::keys::Builder;
-use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
     blaze::fetch_full_tx::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
@@ -41,6 +31,17 @@ use crate::{
         data::SpendableNote,
         walletzkey::{WalletZKey, WalletZKeyType},
     },
+};
+use crate::compact_formats::TreeState;
+use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::keys::Builder;
+use crate::lightwallet::wallettkey::WalletTKey;
+
+use self::{
+    data::{BlockData, SaplingNoteData, Utxo, WalletZecPriceInfo},
+    keys::{InMemoryKeys, Keystores, TxProver},
+    message::Message,
+    wallet_txns::WalletTxns,
 };
 
 pub(crate) mod data;
@@ -120,7 +121,7 @@ impl WalletOptions {
             2 => MemoDownloadOption::AllMemos,
             v => {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Bad download option {}", v)));
-            },
+            }
         };
 
         let spam_threshold = if version <= 1 { -1 } else { reader.read_i64::<LittleEndian>()? };
@@ -469,7 +470,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 );
 
                 Some((target_height, (target_height - anchor_height) as usize))
-            },
+            }
             _ => None,
         }
     }
@@ -512,7 +513,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                                     .to_payment_address(nd.diversifier)
                                     .unwrap(),
                             )
-                        },
+                        }
                         None => true,
                     })
                     .map(|nd| if nd.spent.is_none() && nd.unconfirmed_spent.is_none() { nd.note.value } else { 0 })
@@ -576,7 +577,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                                         .to_payment_address(nd.diversifier)
                                         .unwrap(),
                                 )
-                            },
+                            }
                             None => true,
                         })
                         .map(|nd| nd.note.value)
@@ -641,24 +642,24 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     pub async fn in_memory_keys<'this>(
         &'this self
-    ) -> Result<impl std::ops::Deref<Target = InMemoryKeys<P>> + 'this, io::Error> {
+    ) -> Result<impl std::ops::Deref<Target=InMemoryKeys<P>> + 'this, io::Error> {
         let keys = self.keys.read().await;
         tokio::sync::RwLockReadGuard::try_map(keys, |keys| match keys {
             Keystores::Memory(keys) => Some(keys),
             _ => None,
         })
-        .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
+            .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
     }
 
     pub async fn in_memory_keys_mut<'this>(
         &'this self
-    ) -> Result<impl std::ops::DerefMut<Target = InMemoryKeys<P>> + 'this, io::Error> {
+    ) -> Result<impl std::ops::DerefMut<Target=InMemoryKeys<P>> + 'this, io::Error> {
         let keys = self.keys.write().await;
         tokio::sync::RwLockWriteGuard::try_map(keys, |keys| match keys {
             Keystores::Memory(keys) => Some(keys),
             _ => None,
         })
-        .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
+            .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
     }
 
     pub fn serialized_version() -> u64 {
@@ -1121,7 +1122,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                                 .to_payment_address(nd.diversifier)
                                 .unwrap(),
                         )
-                    },
+                    }
                     None => true,
                 })
             {
@@ -1165,7 +1166,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                                     .to_payment_address(nd.diversifier)
                                     .unwrap(),
                             )
-                        },
+                        }
                         None => true,
                     })
                 {
@@ -1293,9 +1294,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>, Amount), String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
+        where
+            F: Fn(Box<[u8]>) -> Fut,
+            Fut: Future<Output=Result<String, String>>,
     {
         // Reset the progress to start. Any errors will get recorded here
         self.reset_send_progress().await;
@@ -1309,12 +1310,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 self.set_send_success(txid.clone())
                     .await;
                 Ok((txid, rawtx, fees))
-            },
+            }
             Err(e) => {
                 self.set_send_error(format!("{}", e))
                     .await;
                 Err(e)
-            },
+            }
         }
     }
 
@@ -1325,9 +1326,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         tos: Vec<(&str, u64, Option<String>)>,
         broadcast_fn: F,
     ) -> Result<(String, Vec<u8>, Amount), String>
-    where
-        F: Fn(Box<[u8]>) -> Fut,
-        Fut: Future<Output = Result<String, String>>,
+        where
+            F: Fn(Box<[u8]>) -> Fut,
+            Fut: Future<Output=Result<String, String>>,
     {
         if !self.is_unlocked_for_spending().await {
             return Err("Cannot spend while wallet is locked".to_string());
@@ -1351,7 +1352,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         let e = format!("Invalid recipient address: '{}'", to.0);
                         error!("{}", e);
                         return Err(e);
-                    },
+                    }
                 };
 
                 let value = Amount::from_u64(to.1).unwrap();
@@ -1363,6 +1364,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let (touts_n, sapling_outputs_n) = recepients
             .iter()
             .fold((0, 0), |(tout, sout), (addr, _, _)| match addr {
+                address::RecipientAddress::Unified(_) => { todo!("unified not supported") }
                 address::RecipientAddress::Shielded(_) => (tout, sout + 1),
                 address::RecipientAddress::Transparent(_) => (tout + 1, sout),
             });
@@ -1391,7 +1393,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     let mut guard = self.keys.write().await;
                     guard.add_zaddr().await;
                     guard.first_zkey().await.unwrap()
-                },
+                }
             };
 
             (map, first)
@@ -1442,7 +1444,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         error!("{}", e);
 
                         Err(zcash_primitives::transaction::builder::Error::InvalidAmount)
-                    },
+                    }
                 }
             })
             .collect::<Result<Vec<_>, _>>()
@@ -1483,18 +1485,21 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         Err(e) => {
                             error!("{}", e);
                             return Err(e);
-                        },
+                        }
                     }
-                },
+                }
             };
 
             println!("{}: Adding output", now() - start_time);
 
             if let Err(e) = match to {
+                address::RecipientAddress::Unified(_to) => {
+                    todo!("TODO")
+                }
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recepients += 1;
                     builder.add_sapling_output(Some(ovk), to.clone(), value, encoded_memo)
-                },
+                }
                 address::RecipientAddress::Transparent(to) => builder.add_transparent_output(&to, value),
             } {
                 let e = format!("Error adding output: {:?}", e);
@@ -1543,7 +1548,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 // stop holding a WriteGuard to the keys
                 std::mem::drop(keys);
                 res
-            },
+            }
             Err(e) => {
                 let e = format!("Error creating transaction: {:?}", e);
                 error!("{}", e);
@@ -1552,7 +1557,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .await
                     .is_send_in_progress = false;
                 return Err(e);
-            },
+            }
         };
 
         // Wait for all the progress to be updated
@@ -1618,7 +1623,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 self.txns.clone(),
                 WalletTx::get_price(now(), &price),
             )
-            .await;
+                .await;
         }
 
         Ok((txid, raw_tx, fees))
@@ -1694,15 +1699,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 mod test {
     use zcash_primitives::transaction::components::Amount;
 
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::{
-        blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
+        blaze::test_utils::{FakeCompactBlockList, FakeTransaction, incw_to_string},
         lightclient::{
+            LightClient,
             lightclient_config::UnitTestNetwork,
             test_server::{create_test_server, mine_pending_blocks, mine_random_blocks},
-            LightClient,
         },
     };
+    use crate::lightclient::lightclient_config::UnitTestNetwork;
 
     #[tokio::test]
     async fn z_t_note_selection() {

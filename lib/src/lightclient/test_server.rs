@@ -29,7 +29,6 @@ use crate::compact_formats::{
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
-use crate::lightclient::lightclient_config::UnitTestNetwork;
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
 

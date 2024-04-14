@@ -4,7 +4,7 @@ use zecwallet_cli::{
 };
 use zecwalletlitelib::{
     lightclient::{self, lightclient_config::LightClientConfig},
-    primitives::consensus::MainNetwork,
+    MainNetwork,
 };
 
 pub fn main() {

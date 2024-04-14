@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use log::{error, info};
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
-use zecwalletlitelib::primitives::consensus::{MainNetwork, Parameters};
 use zecwalletlitelib::{commands, lightclient::LightClient};
+use zecwalletlitelib::{MainNetwork, Parameters};
 
 pub mod version;
 
@@ -16,7 +16,7 @@ macro_rules! configure_clapapp {
             .arg(Arg::with_name("nosync")
                 .help("By default, zecwallet-cli will sync the wallet at startup. Pass --nosync to prevent the automatic sync at startup.")
                 .long("nosync")
-                .short("n")
+                .short('n')
                 .takes_value(false))
             .arg(Arg::with_name("recover")
                 .long("recover")
@@ -27,7 +27,7 @@ macro_rules! configure_clapapp {
                 .help("When recovering seed, specify a password for the encrypted wallet")
                 .takes_value(true))
             .arg(Arg::with_name("seed")
-                .short("s")
+                .short('s')
                 .long("seed")
                 .value_name("seed_phrase")
                 .help("Create a new wallet with the given 24-word seed phrase. Will fail if wallet already exists")
@@ -90,7 +90,7 @@ pub fn startup(
     ledger: bool,
 ) -> io::Result<(Sender<(String, Vec<String>)>, Receiver<String>)> {
     // Try to get the configuration
-    let (config, latest_block_height) = LightClientConfig::<MainNetwork>::create(server.clone(), data_dir)?;
+    let (config, latest_block_height) = LightClientConfig::create(MainNetwork, server.clone(), data_dir)?;
 
     let lightclient = match seed {
         Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
@@ -223,11 +223,12 @@ pub fn start_interactive(
 }
 
 pub fn command_loop<P: Parameters + Send + Sync + 'static>(
-    lc: Arc<LightClient<P>>
+    lightclient: Arc<LightClient<P>>
 ) -> (Sender<(String, Vec<String>)>, Receiver<String>) {
     let (command_tx, command_rx) = channel::<(String, Vec<String>)>();
     let (resp_tx, resp_rx) = channel::<String>();
 
+    let lc = lightclient.clone();
     std::thread::spawn(move || {
         LightClient::start_mempool_monitor(lc.clone());
 

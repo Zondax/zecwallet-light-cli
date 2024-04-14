@@ -17,7 +17,7 @@ pub struct SaplingParams;
 #[folder = "pubkey/"]
 pub struct ServerCert;
 
-pub use zcash_primitives as primitives;
+pub use zcash_primitives::consensus::{MainNetwork, Parameters};
 
 // pub mod blaze;
 // pub mod compact_formats;

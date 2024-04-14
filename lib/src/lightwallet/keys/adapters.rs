@@ -476,7 +476,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
                     .find(|extfvk| extfvk.fvk.vk.ivk().to_repr() == ivk.to_repr())
                     .ok_or(format!("Error: unknown key"))?;
 
-                Ok(note.nf(&extfvk.fvk.vk, position))
+                Ok(note.nf(&extfvk.fvk.vk.nk, position))
             },
             #[cfg(feature = "ledger-support")]
             Self::Ledger(this) => {
