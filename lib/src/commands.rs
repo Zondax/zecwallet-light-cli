@@ -5,6 +5,7 @@ use json::object;
 use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
 use zcash_primitives::consensus::{self};
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
 use crate::lightwallet::keys::Keystores;
 use crate::lightwallet::MemoDownloadOption;
@@ -847,10 +848,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     return format!("Couldn't parse argument as array\n{}", Command::<P>::help(self));
                 }
 
+                let fee = u64::from(DEFAULT_FEE);
                 let all_zbalance = lightclient
                     .wallet
                     .verified_zbalance(None)
-                    .await;
+                    .await
+                    .checked_sub(fee);
 
                 let maybe_send_args = json_args
                     .members()
@@ -858,22 +861,25 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                         if !j.has_key("address") || !j.has_key("amount") {
                             Err(format!("Need 'address' and 'amount'\n"))
                         } else {
-                            let amt = match j["amount"].as_str() {
+                            let amount = match j["amount"].as_str() {
                                 Some("entire-verified-zbalance") => all_zbalance,
-                                _ => j["amount"].as_u64().unwrap(),
+                                _ => Some(j["amount"].as_u64().unwrap()),
                             };
 
-                            Ok((
-                                j["address"]
-                                    .as_str()
-                                    .unwrap()
-                                    .to_string()
-                                    .clone(),
-                                amt,
-                                j["memo"]
-                                    .as_str()
-                                    .map(|s| s.to_string().clone()),
-                            ))
+                            match amount {
+                                Some(amt) => Ok((
+                                    j["address"]
+                                        .as_str()
+                                        .unwrap()
+                                        .to_string()
+                                        .clone(),
+                                    amt,
+                                    j["memo"]
+                                        .as_str()
+                                        .map(|s| s.to_string().clone()),
+                                )),
+                                None => Err(format!("Not enough in wallet to pay transaction fee of {}", fee)),
+                            }
                         }
                     })
                     .collect::<Result<Vec<(String, u64, Option<String>)>, String>>();
@@ -892,10 +898,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     Ok(amt) => amt,
                     Err(e) => {
                         if args[1] == "entire-verified-zbalance" {
-                            lightclient
+                            let fee = u64::from(DEFAULT_FEE);
+                            match lightclient
                                 .wallet
                                 .verified_zbalance(None)
                                 .await
+                                .checked_sub(fee)
+                            {
+                                Some(amt) => amt,
+                                None => return format!("Not enough in wallet to pay transaction fee of {}", fee),
+                            }
                         } else {
                             return format!("Couldn't parse amount: {}", e);
                         }
@@ -1333,7 +1345,7 @@ struct DefaultFeeCommand {}
 impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFeeCommand {
     fn help(&self) -> String {
         let mut h = vec![];
-        h.push("Returns the minimum fee in zats for outgoing transactions");
+        h.push("Returns the default fee in zats for outgoing transactions");
         h.push("Usage:");
         h.push("defaultfee <optional_block_height>");
         h.push("");
@@ -1343,20 +1355,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for DefaultFee
     }
 
     fn short_help(&self) -> String {
-        "Returns the minumum fee in zats for outgoing transactions".to_string()
+        "Returns the default fee in zats for outgoing transactions".to_string()
     }
     fn exec(
         &self,
         args: &[&str],
-        client: &LightClient<P>,
+        _client: &LightClient<P>,
     ) -> String {
         if args.len() > 1 {
             return format!("Was expecting at most 1 argument\n{}", Command::<P>::help(self));
         }
 
         RT.block_on(async move {
-            let fee = client.wallet.fee(0, 0, 0, 0, 0);
-            let j = object! { "defaultfee" => fee };
+            let j = object! { "defaultfee" => u64::from(DEFAULT_FEE)};
             j.pretty(2)
         })
     }
@@ -1369,7 +1380,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NewAddress
         let mut h = vec![];
         h.push("Create a new address in this wallet");
         h.push("Usage:");
-        h.push("new [z | t]");
+        h.push("new [u | z | t]");
         h.push("");
         h.push("Example:");
         h.push("To create a new z address:");

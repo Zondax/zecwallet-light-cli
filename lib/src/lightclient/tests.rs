@@ -22,7 +22,9 @@ use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::redjubjub::Signature;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
-use zcash_primitives::transaction::components::{sapling, Amount, OutputDescription, GROTH_PROOF_SIZE};
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
+use zcash_primitives::transaction::components::{sapling, Amount};
+use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
 use zcash_primitives::transaction::{Transaction, TransactionData};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
@@ -312,7 +314,7 @@ async fn z_incoming_z_outgoing() {
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
-    let (sent_txid, fees) = lc
+    let sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
         .await
         .unwrap();
@@ -348,7 +350,7 @@ async fn z_incoming_z_outgoing() {
         .unwrap();
 
     assert_eq!(jv["txid"], sent_txid);
-    assert_eq!(jv["amount"].as_i64().unwrap(), -(sent_value as i64 + i64::from(fees)));
+    assert_eq!(jv["amount"].as_i64().unwrap(), -(sent_value as i64 + i64::from(DEFAULT_FEE)));
     assert_eq!(jv["unconfirmed"].as_bool().unwrap(), true);
     assert_eq!(jv["block_height"].as_u64().unwrap(), 17);
 
@@ -391,7 +393,7 @@ async fn z_incoming_z_outgoing() {
         notes["unspent_notes"][0]["value"]
             .as_u64()
             .unwrap(),
-        value - sent_value - u64::from(fees)
+        value - sent_value - u64::from(DEFAULT_FEE)
     );
     assert_eq!(
         notes["unspent_notes"][0]["is_change"]
@@ -633,9 +635,9 @@ async fn multiple_incoming_same_tx() {
     }
 
     // 3. Send a big tx, so all the value is spent
-    let sent_value = value * 3;
+    let sent_value = value * 3 + u64::from(DEFAULT_FEE);
     mine_random_blocks(&mut fcbl, &data, &lc, 5).await; // make the funds spentable
-    let (sent_txid, fees) = lc
+    let sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, None)])
         .await
         .unwrap();
@@ -658,7 +660,7 @@ async fn multiple_incoming_same_tx() {
     }
     assert_eq!(txns[4]["txid"], sent_txid);
     assert_eq!(txns[4]["block_height"], 17);
-    assert_eq!(txns[4]["amount"].as_i64().unwrap(), -(sent_value as i64) - i64::from(fees));
+    assert_eq!(txns[4]["amount"].as_i64().unwrap(), -(sent_value as i64) - i64::from(DEFAULT_FEE));
     assert_eq!(txns[4]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
     assert_eq!(
         txns[4]["outgoing_metadata"][0]["value"]
@@ -726,7 +728,7 @@ async fn z_incoming_multiz_outgoing() {
     assert_eq!(list[1]["txid"], sent_txid);
     assert_eq!(
         list[1]["amount"].as_i64().unwrap(),
-        -i64::from(fees)
+        -i64::from(DEFAULT_FEE)
             - (tos
                 .iter()
                 .map(|(_, a, _)| *a)
@@ -790,7 +792,7 @@ async fn z_to_z_scan_together() {
             tree
         });
     let witness = IncrementalWitness::from_tree(&tree);
-    let nf = note.nf(&extfvk1.fvk.vk, witness.position() as u64);
+    let nf = note.nf(&extfvk1.fvk.vk.nk, witness.position() as u64);
 
     let pa = if let Some(RecipientAddress::Shielded(pa)) = RecipientAddress::decode(&config.get_params(), EXT_ZADDR) {
         pa
@@ -950,7 +952,7 @@ async fn z_incoming_viewkey() {
     let sent_value = 3000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
-    let (sent_txid, fees) = lc
+    let sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
         .await
         .unwrap();
@@ -960,7 +962,7 @@ async fn z_incoming_viewkey() {
     // 8. Make sure tx is present
     let list = lc.do_list_transactions(false).await;
     assert_eq!(list[1]["txid"], sent_txid);
-    assert_eq!(list[1]["amount"].as_i64().unwrap(), -((sent_value + u64::from(fees)) as i64));
+    assert_eq!(list[1]["amount"].as_i64().unwrap(), -((sent_value + u64::from(DEFAULT_FEE)) as i64));
     assert_eq!(list[1]["outgoing_metadata"][0]["address"], EXT_ZADDR.to_string());
     assert_eq!(
         list[1]["outgoing_metadata"][0]["value"]
@@ -1007,6 +1009,7 @@ async fn t_incoming_t_outgoing() {
 
     // 3. Test the list
     let list = lc.do_list_transactions(false).await;
+    println!("{}", list.pretty(2));
     assert_eq!(
         list[0]["block_height"]
             .as_u64()
@@ -1019,7 +1022,7 @@ async fn t_incoming_t_outgoing() {
 
     // 4. We can spend the funds immediately, since this is a taddr
     let sent_value = 20_000;
-    let (sent_txid, fees) = lc
+    let sent_txid = lc
         .test_do_send(vec![(EXT_TADDR, sent_value, None)])
         .await
         .unwrap();
@@ -1035,7 +1038,7 @@ async fn t_incoming_t_outgoing() {
         12
     );
     assert_eq!(list[1]["txid"], sent_txid);
-    assert_eq!(list[1]["amount"].as_i64().unwrap(), -(sent_value as i64 + i64::from(fees)));
+    assert_eq!(list[1]["amount"].as_i64().unwrap(), -(sent_value as i64 + i64::from(DEFAULT_FEE)));
     assert_eq!(
         list[1]["unconfirmed"]
             .as_bool()
@@ -1087,7 +1090,7 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_notes"][0]["value"]
             .as_u64()
             .unwrap(),
-        value - sent_value - u64::from(fees)
+        value - sent_value - u64::from(DEFAULT_FEE)
     );
 
     let list = lc.do_list_transactions(false).await;
@@ -1158,7 +1161,7 @@ async fn t_incoming_t_outgoing() {
         notes["unspent_notes"][0]["value"]
             .as_u64()
             .unwrap(),
-        value - sent_value - u64::from(fees)
+        value - sent_value - u64::from(DEFAULT_FEE)
     );
 
     // Shutdown everything cleanly
@@ -1216,7 +1219,7 @@ async fn mixed_txn() {
     let sent_tvalue = 140_000;
     let sent_zmemo = "Ext z".to_string();
     let tos = vec![(EXT_ZADDR, sent_zvalue, Some(sent_zmemo.clone())), (EXT_TADDR, sent_tvalue, None)];
-    let (_sent_txid, fees) = lc.test_do_send(tos).await.unwrap();
+    lc.test_do_send(tos).await.unwrap();
 
     fcbl.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1242,7 +1245,7 @@ async fn mixed_txn() {
         notes["unspent_notes"][0]["value"]
             .as_u64()
             .unwrap(),
-        tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(fees)
+        tvalue + zvalue - sent_tvalue - sent_zvalue - u64::from(DEFAULT_FEE)
     );
 
     assert_eq!(notes["spent_notes"].len(), 1);
@@ -1262,7 +1265,7 @@ async fn mixed_txn() {
             .unwrap(),
         18
     );
-    assert_eq!(list[2]["amount"].as_i64().unwrap(), 0 - (sent_tvalue + sent_zvalue + u64::from(fees)) as i64);
+    assert_eq!(list[2]["amount"].as_i64().unwrap(), 0 - (sent_tvalue + sent_zvalue + u64::from(DEFAULT_FEE)) as i64);
     assert_eq!(list[2]["txid"], notes["unspent_notes"][0]["created_in_txid"]);
     assert_eq!(
         list[2]["outgoing_metadata"]
@@ -1337,7 +1340,7 @@ async fn aborted_resync() {
     let sent_tvalue = 140_000;
     let sent_zmemo = "Ext z".to_string();
     let tos = vec![(EXT_ZADDR, sent_zvalue, Some(sent_zmemo.clone())), (EXT_TADDR, sent_tvalue, None)];
-    let (sent_txid, fees) = lc.test_do_send(tos).await.unwrap();
+    let sent_txid = lc.test_do_send(tos).await.unwrap();
 
     fcbl.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1359,7 +1362,7 @@ async fn aborted_resync() {
                 .collect(),
         ))
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1396,7 +1399,7 @@ async fn aborted_resync() {
                 .collect(),
         ))
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1480,9 +1483,9 @@ async fn no_change() {
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     // 4. Send a tx to both external t-addr and external z addr and mine it
-    let sent_zvalue = tvalue + zvalue;
+    let sent_zvalue = tvalue + zvalue - u64::from(DEFAULT_FEE);
     let tos = vec![(EXT_ZADDR, sent_zvalue, None)];
-    let (sent_txid, fees) = lc.test_do_send(tos).await.unwrap();
+    let sent_txid = lc.test_do_send(tos).await.unwrap();
 
     fcbl.add_pending_sends(&data).await;
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
@@ -1646,7 +1649,7 @@ async fn witness_clearing() {
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
-    let (_sent_txid, fees) = lc
+    let _sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
         .await
         .unwrap();
@@ -1660,7 +1663,7 @@ async fn witness_clearing() {
         .current
         .get(&tx.txid())
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1681,7 +1684,7 @@ async fn witness_clearing() {
         .current
         .get(&tx.txid())
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1698,7 +1701,7 @@ async fn witness_clearing() {
         .current
         .get(&tx.txid())
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1715,7 +1718,7 @@ async fn witness_clearing() {
         .current
         .get(&tx.txid())
         .unwrap()
-        .notes
+        .s_notes
         .get(0)
         .unwrap()
         .witnesses
@@ -1762,7 +1765,7 @@ async fn mempool_clearing() {
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
-    let (sent_txid, fees) = lc
+    let sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
         .await
         .unwrap();
@@ -1913,7 +1916,7 @@ async fn mempool_and_balance() {
     let sent_value = 2000;
     let outgoing_memo = "Outgoing Memo".to_string();
 
-    let (_txid, fees) = lc
+    let _sent_txid = lc
         .test_do_send(vec![(EXT_ZADDR, sent_value, Some(outgoing_memo.clone()))])
         .await
         .unwrap();
@@ -1922,7 +1925,7 @@ async fn mempool_and_balance() {
 
     // Even though the tx is not mined (in the mempool) the balances should be
     // updated to reflect the spent funds
-    let new_bal = value - (sent_value + u64::from(fees));
+    let new_bal = value - (sent_value + u64::from(DEFAULT_FEE));
     assert_eq!(bal["zbalance"].as_u64().unwrap(), new_bal);
     assert_eq!(
         bal["verified_zbalance"]

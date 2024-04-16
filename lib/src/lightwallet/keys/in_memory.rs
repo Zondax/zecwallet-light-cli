@@ -16,7 +16,7 @@ use zcash_primitives::{
     consensus,
     consensus::BlockHeight,
     legacy::TransparentAddress,
-    sapling::{PaymentAddress, SaplingIvk},
+    sapling::PaymentAddress,
     zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
@@ -32,6 +32,8 @@ use crate::{
 
 mod builder;
 pub use builder::{BuilderError as InMemoryBuilderError, InMemoryBuilder};
+
+use crate::lightwallet::walletokey::WalletOKey;
 
 // Manages all the keys in the wallet. Note that the RwLock for this is present
 // in `lightwallet.rs`, so we'll assume that this is already gone through a
@@ -60,6 +62,10 @@ pub struct InMemoryKeys<P> {
     // Transparent keys. If the wallet is locked, then the secret keys will be encrypted,
     // but the addresses will be present. This Vec contains both wallet and imported tkeys
     pub(crate) tkeys: Vec<WalletTKey>,
+
+    // List of keys, actually in this wallet. This is a combination of HD keys derived from the seed,
+    // viewing keys and imported spending keys.
+    pub(crate) okeys: Vec<WalletOKey>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
@@ -79,6 +85,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             seed: [0u8; 32],
             zkeys: vec![],
             tkeys: vec![],
+            okeys: vec![],
         }
     }
 
@@ -86,6 +93,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
         config: &LightClientConfig<P>,
         seed_phrase: Option<String>,
         num_zaddrs: u32,
+        num_oaddrs: u32,
     ) -> Result<Self, String> {
         let mut seed_bytes = [0u8; 32];
 
@@ -115,6 +123,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             seed: seed_bytes,
             zkeys: vec![],
             tkeys: vec![],
+            okeys: vec![],
         };
 
         // Derive only the first sk and address
@@ -261,6 +270,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             Vector::read(&mut reader, |r| WalletTKey::read(r))?
         };
 
+        let okeys = vec![];
+
         Ok(Self {
             config: config.clone(),
             encrypted,
@@ -270,6 +281,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys,
         })
     }
 
@@ -316,6 +328,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             Vector::read(&mut reader, |r| WalletTKey::read(r))?
         };
 
+        let okeys = vec![];
+
         Ok(Self {
             config: config.clone(),
             encrypted,
@@ -325,6 +339,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             seed: seed_bytes,
             zkeys,
             tkeys,
+            okeys,
         })
     }
 
@@ -404,13 +419,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
             .collect::<Vec<_>>()
     }
 
-    pub fn have_spending_key(
+    pub fn have_sapling_spending_key(
         &self,
-        ivk: &SaplingIvk,
+        extfvk: &ExtendedFullViewingKey,
     ) -> bool {
         self.zkeys
             .iter()
-            .find(|zk| zk.extfvk.fvk.vk.ivk().to_repr() == ivk.to_repr())
+            .find(|zk| zk.extfvk == *extfvk)
             .map(|zk| zk.have_spending_key())
             .unwrap_or(false)
     }

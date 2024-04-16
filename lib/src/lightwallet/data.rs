@@ -3,16 +3,23 @@ use std::io::{self, Read, Write};
 use std::usize;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use ff::PrimeField;
+use incrementalmerkletree::Position;
+use orchard::keys::FullViewingKey;
+use orchard::note::RandomSeed;
+use orchard::value::NoteValue;
+use orchard::Address;
 use prost::Message;
 use zcash_encoding::{Optional, Vector};
-use zcash_primitives::zip32::ExtendedFullViewingKey;
+use zcash_primitives::memo::MemoBytes;
+use zcash_primitives::sapling;
+use zcash_primitives::{consensus::BlockHeight, zip32::ExtendedSpendingKey};
 use zcash_primitives::{
-    consensus::BlockHeight,
-    memo::{Memo, MemoBytes},
+    memo::Memo,
     merkle_tree::{CommitmentTree, IncrementalWitness},
-    sapling::{Diversifier, Node, Note, Nullifier, Rseed, SaplingIvk},
+    sapling::Node,
+    sapling::{Diversifier, Rseed},
     transaction::{components::OutPoint, TxId},
+    zip32::ExtendedFullViewingKey,
 };
 
 use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
@@ -199,17 +206,163 @@ impl WitnessCache {
     // }
 }
 
+pub struct OrchardNoteData {
+    pub(super) fvk: FullViewingKey,
+
+    pub note: orchard::Note,
+
+    // (Block number, tx_num, output_num)
+    pub created_at: (u64, usize, u32),
+    pub witness_position: Option<Position>,
+
+    // Info needed to recreate note
+    pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
+
+    // If this note was spent in a send, but has not yet been confirmed.
+    // Contains the txid and height at which it was broadcast
+    pub unconfirmed_spent: Option<(TxId, u32)>,
+    pub memo: Option<Memo>,
+    pub is_change: bool,
+
+    // If the spending key is available in the wallet (i.e., whether to keep witness up-to-date)
+    pub have_spending_key: bool,
+}
+
+impl OrchardNoteData {
+    fn serialized_version() -> u64 {
+        22
+    }
+
+    // Reading a note also needs the corresponding address to read from.
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let version = reader.read_u64::<LittleEndian>()?;
+        assert!(version <= Self::serialized_version());
+
+        let fvk = FullViewingKey::read(&mut reader)?;
+
+        // Read the parts of the note
+        // Raw address bytes is 43
+        let mut address_bytes = [0u8; 43];
+        reader.read_exact(&mut address_bytes)?;
+        let note_address = Address::from_raw_address_bytes(&address_bytes).unwrap();
+        let note_value = reader.read_u64::<LittleEndian>()?;
+        let mut rho_bytes = [0u8; 32];
+        reader.read_exact(&mut rho_bytes)?;
+        let note_rho = orchard::note::Nullifier::from_bytes(&rho_bytes).unwrap();
+        let mut note_rseed_bytes = [0u8; 32];
+        reader.read_exact(&mut note_rseed_bytes)?;
+        let note_rseed = RandomSeed::from_bytes(note_rseed_bytes, &note_rho).unwrap();
+
+        let note = orchard::Note::from_parts(note_address, NoteValue::from_raw(note_value), note_rho, note_rseed);
+
+        let witness_position = Optional::read(&mut reader, |r| {
+            let pos = r.read_u64::<LittleEndian>()?;
+            Ok(Position::from(pos as usize))
+        })?;
+
+        let spent = Optional::read(&mut reader, |r| {
+            let mut txid_bytes = [0u8; 32];
+            r.read_exact(&mut txid_bytes)?;
+            let height = r.read_u32::<LittleEndian>()?;
+            Ok((TxId::from_bytes(txid_bytes), height))
+        })?;
+
+        let unconfirmed_spent = Optional::read(&mut reader, |r| {
+            let mut txbytes = [0u8; 32];
+            r.read_exact(&mut txbytes)?;
+
+            let height = r.read_u32::<LittleEndian>()?;
+            Ok((TxId::from_bytes(txbytes), height))
+        })?;
+
+        let memo = Optional::read(&mut reader, |r| {
+            let mut memo_bytes = [0u8; 512];
+            r.read_exact(&mut memo_bytes)?;
+
+            // Attempt to read memo, first as text, else as arbitrary 512 bytes
+            match MemoBytes::from_bytes(&memo_bytes) {
+                Ok(mb) => match Memo::try_from(mb.clone()) {
+                    Ok(m) => Ok(m),
+                    Err(_) => Ok(Memo::Future(mb)),
+                },
+                Err(e) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Couldn't create memo: {}", e))),
+            }
+        })?;
+
+        let is_change: bool = reader.read_u8()? > 0;
+
+        let have_spending_key = reader.read_u8()? > 0;
+
+        Ok(OrchardNoteData {
+            fvk,
+            note,
+            created_at: (0, 0, 0),
+            witness_position,
+            spent,
+            unconfirmed_spent,
+            memo,
+            is_change,
+            have_spending_key,
+        })
+    }
+
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
+        // Write a version number first, so we can later upgrade this if needed.
+        writer.write_u64::<LittleEndian>(Self::serialized_version())?;
+
+        self.fvk.write(&mut writer)?;
+
+        // Write the components of the note
+        writer.write_all(
+            &self
+                .note
+                .recipient()
+                .to_raw_address_bytes(),
+        )?;
+        writer.write_u64::<LittleEndian>(self.note.value().inner())?;
+        writer.write_all(&self.note.rho().to_bytes())?;
+        writer.write_all(self.note.rseed().as_bytes())?;
+
+        // We don't write the created_at, because it should be temporary
+        Optional::write(&mut writer, self.witness_position, |w, p| w.write_u64::<LittleEndian>(p.into()))?;
+
+        Optional::write(&mut writer, self.spent, |w, (txid, h)| {
+            w.write_all(txid.as_ref())?;
+            w.write_u32::<LittleEndian>(h)
+        })?;
+
+        Optional::write(&mut writer, self.unconfirmed_spent, |w, (txid, height)| {
+            w.write_all(txid.as_ref())?;
+            w.write_u32::<LittleEndian>(height)
+        })?;
+
+        Optional::write(&mut writer, self.memo.as_ref(), |w, m| w.write_all(m.encode().as_array()))?;
+
+        writer.write_u8(if self.is_change { 1 } else { 0 })?;
+
+        writer.write_u8(if self.have_spending_key { 1 } else { 0 })?;
+
+        // Note that we don't write the unconfirmed_spent field, because if the wallet
+        // is restarted, we don't want to be beholden to any expired txns
+
+        Ok(())
+    }
+}
+
 pub struct SaplingNoteData {
     // Technically, this should be recoverable from the account number,
     // but we're going to refactor this in the future, so I'll write it again here.
-    pub(super) ivk: SaplingIvk,
+    pub(super) extfvk: ExtendedFullViewingKey,
 
     pub diversifier: Diversifier,
-    pub note: Note,
+    pub note: sapling::Note,
 
     // Witnesses for the last 100 blocks. witnesses.last() is the latest witness
     pub(crate) witnesses: WitnessCache,
-    pub(super) nullifier: Nullifier,
+    pub(super) nullifier: sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
     // If this note was spent in a send, but has not yet been confirmed.
@@ -256,7 +409,7 @@ fn write_rseed<W: Write>(
 
 impl SaplingNoteData {
     fn serialized_version() -> u64 {
-        21
+        20
     }
 
     // Reading a note also needs the corresponding address to read from.
@@ -265,20 +418,7 @@ impl SaplingNoteData {
 
         let _account = if version <= 5 { reader.read_u64::<LittleEndian>()? } else { 0 };
 
-        let ivk = if version <= 20 {
-            ExtendedFullViewingKey::read(&mut reader)?
-                .fvk
-                .vk
-                .ivk()
-        } else {
-            let mut ivk_bytes = [0; 32];
-            reader.read_exact(&mut ivk_bytes)?;
-            let fr = jubjub::Fr::from_repr(ivk_bytes);
-            if !(fr.is_some().unwrap_u8() == 1u8) {
-                io::Error::new(io::ErrorKind::InvalidData, format!("invalid note ivk"));
-            }
-            SaplingIvk(fr.unwrap())
-        };
+        let extfvk = ExtendedFullViewingKey::read(&mut reader)?;
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
@@ -302,7 +442,9 @@ impl SaplingNoteData {
             (value, rseed)
         };
 
-        let maybe_note = ivk
+        let maybe_note = extfvk
+            .fvk
+            .vk
             .to_payment_address(diversifier)
             .unwrap()
             .create_note(value, rseed);
@@ -318,7 +460,7 @@ impl SaplingNoteData {
 
         let mut nullifier = [0u8; 32];
         reader.read_exact(&mut nullifier)?;
-        let nullifier = Nullifier(nullifier);
+        let nullifier = sapling::Nullifier(nullifier);
 
         // Note that this is only the spent field, we ignore the unconfirmed_spent
         // field. The reason is that unconfirmed spents are only in memory, and
@@ -383,7 +525,7 @@ impl SaplingNoteData {
         };
 
         Ok(SaplingNoteData {
-            ivk,
+            extfvk,
             diversifier,
             note,
             witnesses,
@@ -403,7 +545,7 @@ impl SaplingNoteData {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        writer.write_all(&self.ivk.to_repr())?;
+        self.extfvk.write(&mut writer)?;
 
         writer.write_all(&self.diversifier.0)?;
 
@@ -607,13 +749,22 @@ pub struct WalletTx {
     pub txid: TxId,
 
     // List of all nullifiers spent in this Tx. These nullifiers belong to the wallet.
-    pub spent_nullifiers: Vec<Nullifier>,
+    pub s_spent_nullifiers: Vec<sapling::Nullifier>,
+
+    // List of all orchard nullifiers spent in this Tx.
+    pub o_spent_nullifiers: Vec<orchard::note::Nullifier>,
 
     // List of all notes received in this tx. Some of these might be change notes.
-    pub notes: Vec<SaplingNoteData>,
+    pub s_notes: Vec<SaplingNoteData>,
+
+    // List of all orchard notes recieved in this tx. Some of these might be change.
+    pub o_notes: Vec<OrchardNoteData>,
 
     // List of all Utxos received in this Tx. Some of these might be change notes
     pub utxos: Vec<Utxo>,
+
+    // Total value of all orchard nullifiers that were spent in this Tx
+    pub total_orchard_value_spent: u64,
 
     // Total value of all the sapling nullifiers that were spent in this Tx
     pub total_sapling_value_spent: u64,
@@ -633,7 +784,7 @@ pub struct WalletTx {
 
 impl WalletTx {
     pub fn serialized_version() -> u64 {
-        return 21;
+        return 23;
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {
@@ -672,11 +823,14 @@ impl WalletTx {
             unconfirmed,
             datetime,
             txid: txid.clone(),
-            spent_nullifiers: vec![],
-            notes: vec![],
+            o_spent_nullifiers: vec![],
+            s_spent_nullifiers: vec![],
+            s_notes: vec![],
+            o_notes: vec![],
             utxos: vec![],
             total_transparent_value_spent: 0,
             total_sapling_value_spent: 0,
+            total_orchard_value_spent: 0,
             outgoing_metadata: vec![],
             full_tx_scanned: false,
             zec_price: None,
@@ -697,9 +851,10 @@ impl WalletTx {
 
         let txid = TxId::from_bytes(txid_bytes);
 
-        let notes = Vector::read(&mut reader, |r| SaplingNoteData::read(r))?;
+        let s_notes = Vector::read(&mut reader, |r| SaplingNoteData::read(r))?;
         let utxos = Vector::read(&mut reader, |r| Utxo::read(r))?;
 
+        let total_orchard_value_spent = if version <= 22 { 0 } else { reader.read_u64::<LittleEndian>()? };
         let total_sapling_value_spent = reader.read_u64::<LittleEndian>()?;
         let total_transparent_value_spent = reader.read_u64::<LittleEndian>()?;
 
@@ -711,13 +866,25 @@ impl WalletTx {
         let zec_price =
             if version <= 4 { None } else { Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())? };
 
-        let spent_nullifiers = if version <= 5 {
+        let s_spent_nullifiers = if version <= 5 {
             vec![]
         } else {
             Vector::read(&mut reader, |r| {
                 let mut n = [0u8; 32];
                 r.read_exact(&mut n)?;
-                Ok(Nullifier(n))
+                Ok(sapling::Nullifier(n))
+            })?
+        };
+
+        let o_notes = if version <= 21 { vec![] } else { Vector::read(&mut reader, |r| OrchardNoteData::read(r))? };
+
+        let o_spent_nullifiers = if version <= 21 {
+            vec![]
+        } else {
+            Vector::read(&mut reader, |r| {
+                let mut rho_bytes = [0u8; 32];
+                r.read_exact(&mut rho_bytes)?;
+                Ok(orchard::note::Nullifier::from_bytes(&rho_bytes).unwrap())
             })?
         };
 
@@ -726,10 +893,13 @@ impl WalletTx {
             unconfirmed,
             datetime,
             txid,
-            notes,
+            s_notes,
+            o_notes,
             utxos,
-            spent_nullifiers,
+            s_spent_nullifiers,
+            o_spent_nullifiers,
             total_sapling_value_spent,
+            total_orchard_value_spent,
             total_transparent_value_spent,
             outgoing_metadata,
             full_tx_scanned,
@@ -752,9 +922,10 @@ impl WalletTx {
 
         writer.write_all(self.txid.as_ref())?;
 
-        Vector::write(&mut writer, &self.notes, |w, nd| nd.write(w))?;
+        Vector::write(&mut writer, &self.s_notes, |w, nd| nd.write(w))?;
         Vector::write(&mut writer, &self.utxos, |w, u| u.write(w))?;
 
+        writer.write_u64::<LittleEndian>(self.total_orchard_value_spent)?;
         writer.write_u64::<LittleEndian>(self.total_sapling_value_spent)?;
         writer.write_u64::<LittleEndian>(self.total_transparent_value_spent)?;
 
@@ -765,47 +936,61 @@ impl WalletTx {
 
         Optional::write(&mut writer, self.zec_price, |w, p| w.write_f64::<LittleEndian>(p))?;
 
-        Vector::write(&mut writer, &self.spent_nullifiers, |w, n| w.write_all(&n.0))?;
+        Vector::write(&mut writer, &self.s_spent_nullifiers, |w, n| w.write_all(&n.0))?;
+
+        Vector::write(&mut writer, &self.o_notes, |w, n| n.write(w))?;
+
+        Vector::write(&mut writer, &self.o_spent_nullifiers, |w, n| w.write_all(&n.to_bytes()))?;
 
         Ok(())
     }
 
     pub fn total_funds_spent(&self) -> u64 {
-        self.total_sapling_value_spent + self.total_transparent_value_spent
+        self.total_orchard_value_spent + self.total_sapling_value_spent + self.total_transparent_value_spent
     }
 }
 
-pub struct SpendableNote {
+pub struct SpendableOrchardNote {
     pub txid: TxId,
-    pub nullifier: Nullifier,
-    pub diversifier: Diversifier,
-    pub note: Note,
-    pub witness: IncrementalWitness<Node>,
-    /// ivk of the associated spending key
-    pub ivk: SaplingIvk,
+    pub sk: orchard::keys::SpendingKey,
+    pub note: orchard::Note,
+    pub merkle_path: orchard::tree::MerklePath,
 }
 
-impl SpendableNote {
+pub struct SpendableSaplingNote {
+    pub txid: TxId,
+    pub nullifier: sapling::Nullifier,
+    pub diversifier: Diversifier,
+    pub note: sapling::Note,
+    pub witness: IncrementalWitness<Node>,
+    pub extsk: ExtendedSpendingKey,
+}
+
+impl SpendableSaplingNote {
     pub fn from(
         txid: TxId,
         nd: &SaplingNoteData,
         anchor_offset: usize,
-        ivk: &SaplingIvk,
+        extsk: &Option<ExtendedSpendingKey>,
     ) -> Option<Self> {
         // Include only notes that haven't been spent, or haven't been included in an
         // unconfirmed spend yet.
-        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() && nd.witnesses.len() >= (anchor_offset + 1) {
+        if nd.spent.is_none()
+            && nd.unconfirmed_spent.is_none()
+            && extsk.is_some()
+            && nd.witnesses.len() >= (anchor_offset + 1)
+        {
             let witness = nd
                 .witnesses
                 .get(nd.witnesses.len() - anchor_offset - 1);
 
-            witness.map(|w| SpendableNote {
+            witness.map(|w| SpendableSaplingNote {
                 txid,
                 nullifier: nd.nullifier,
                 diversifier: nd.diversifier,
                 note: nd.note.clone(),
                 witness: w.clone(),
-                ivk: SaplingIvk(ivk.0),
+                extsk: extsk.clone().unwrap(),
             })
         } else {
             None

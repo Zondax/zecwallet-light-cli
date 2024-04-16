@@ -8,13 +8,14 @@ use async_trait::async_trait;
 use derive_more::From;
 use group::GroupEncoding;
 use jubjub::AffinePoint;
+use orchard::keys::{FullViewingKey, IncomingViewingKey};
 use secp256k1::PublicKey as SecpPublicKey;
 use thiserror::Error;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::transaction::Transaction;
+use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 use zcash_primitives::{
-    consensus,
     consensus::{BlockHeight, Parameters},
     keys::OutgoingViewingKey,
     legacy::TransparentAddress,
@@ -98,7 +99,7 @@ impl<P: Parameters> Keystores<P> {
     }
 }
 
-impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
+impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
     pub fn as_kind(&self) -> KeystoresKind {
         match self {
             Self::Memory(_) => KeystoresKind::Memory,
@@ -115,44 +116,116 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
         }
     }
 
-    /// Retrieve all known IVKs in the keystore
-    pub async fn get_all_ivks(&self) -> impl Iterator<Item = SaplingIvk> {
-        // this is some hard to read rust trickery, but in short we are
-        // an iterator for all the ivks in the keystore
-        // using options and iterator methods to unify the type to return into 1
-        // so we can use `impl` and not `dyn`
-        //
-        // To add future variants (if ever), add an element to the tuple,
-        // set it to `None` on all branches except the new one where the
-        // new variant is matched against
-        //
-        // Finally, add `.chain(new_tuple_item.into_iter().flatten())`
-        // at the bottom expression
+    pub async fn get_all_extfvks(&self) -> impl Iterator<Item = ExtendedFullViewingKey> {
+        std::iter::once_with(|| todo!("not implemented"))
+    }
 
-        let (memory, ledger) = match self {
-            Self::Memory(this) => (
-                Some(
-                    this.get_all_extfvks()
-                        .into_iter()
-                        .map(|key| key.fvk.vk.ivk()),
-                ),
-                None,
-            ),
+    pub fn get_orchard_sk_for_fvk(
+        &self,
+        _fvk: &orchard::keys::FullViewingKey,
+    ) -> Option<orchard::keys::SpendingKey> {
+        todo!("not implemented")
+    }
+
+    pub async fn get_extsk_for_extfvk(
+        &self,
+        _extfvk: &ExtendedFullViewingKey,
+    ) -> impl Iterator<Item = ExtendedSpendingKey> {
+        std::iter::once_with(|| todo!("not implemented"))
+    }
+
+    // /// Retrieve all known IVKs in the keystore
+    // pub async fn get_all_ivks(&self) -> impl Iterator<Item = SaplingIvk> {
+    //     // this is some hard to read rust trickery, but in short we are
+    //     // an iterator for all the ivks in the keystore
+    //     // using options and iterator methods to unify the type to return into 1,
+    //     // so we can use `impl` and not `dyn`
+    //     //
+    //     // To add future variants (if ever), add an element to the tuple,
+    //     // set it to `None` on all branches except the new one where the
+    //     // new variant is matched against
+    //     //
+    //     // Finally, add `.chain(new_tuple_item.into_iter().flatten())`
+    //     // at the bottom expression
+    //
+    //     let (memory, ledger) = match self {
+    //         Self::Memory(this) => (
+    //             Some(
+    //                 this.get_all_extfvks()
+    //                     .into_iter()
+    //                     .map(|key| key.fvk.vk.ivk()),
+    //             ),
+    //             None,
+    //         ),
+    //         #[cfg(feature = "ledger-support")]
+    //         Self::Ledger(this) => (
+    //             None,
+    //             Some(
+    //                 this.get_all_sapling_ivks()
+    //                     .await
+    //                     .map(|(ivk, _)| ivk),
+    //             ),
+    //         ),
+    //     };
+    //
+    //     memory
+    //         .into_iter()
+    //         .flatten()
+    //         .chain(ledger.into_iter().flatten())
+    // }
+
+    pub async fn get_sapling_extfvk(
+        &self,
+        idx: usize,
+    ) -> Option<ExtendedFullViewingKey> {
+        match self {
+            Self::Memory(memory_keys) => memory_keys
+                .zkeys
+                .get(idx)
+                .map(|zk| zk.extfvk().clone()),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => (
-                None,
-                Some(
-                    this.get_all_ivks()
-                        .await
-                        .map(|(ivk, _)| ivk),
-                ),
-            ),
-        };
+            Self::Ledger(_ledger_keys) => {
+                todo!("not implemented")
+            },
+        }
+    }
 
-        memory
-            .into_iter()
-            .flatten()
-            .chain(ledger.into_iter().flatten())
+    pub async fn get_orchard_fvk(
+        &self,
+        idx: usize,
+    ) -> Option<FullViewingKey> {
+        match self {
+            Self::Memory(memory_keys) => memory_keys
+                .okeys
+                .get(idx)
+                .map(|zk| zk.fvk().clone()),
+            #[cfg(feature = "ledger-support")]
+            Self::Ledger(_ledger_keys) => {
+                todo!("not implemented")
+            },
+        }
+    }
+
+    pub async fn get_all_sapling_ivks(&self) -> Vec<SaplingIvk> {
+        match self {
+            Self::Memory(memory_keys) => memory_keys
+                .zkeys
+                .iter()
+                .map(|zk| zk.extfvk().fvk.vk.ivk())
+                .collect(),
+            #[cfg(feature = "ledger-support")]
+            Self::Ledger(ledger_keys) => {
+                // Retrieve Sapling IVKs from the Ledger keystore, filtering out the diversifier
+                ledger_keys
+                    .get_all_sapling_ivks()
+                    .await
+                    .map(|(ivk, _)| ivk)
+                    .collect()
+            },
+        }
+    }
+    pub async fn get_all_orchard_ivks(&self) -> impl Iterator<Item = IncomingViewingKey> {
+        std::iter::once_with(|| todo!("not implemented"))
     }
 
     /// Retrieve all known OVKs in the keystore
@@ -210,6 +283,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
             .chain(ledger.into_iter().flatten())
     }
 
+    /// Retrieve all known UAddrs in the keystore
+    pub async fn get_all_uaddresses(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::empty()
+    }
+
     /// Retrieve all ZAddrs in the keystore which we have the spending key for
     pub async fn get_all_spendable_zaddresses(&self) -> impl Iterator<Item = String> + '_ {
         // see comment inside `get_all_ivks`
@@ -232,41 +310,45 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
             .chain(ledger.into_iter().flatten())
     }
 
-    /// Retrieve all IVKs in the keystore which we have the spending key for
-    pub async fn get_all_spendable_ivks(&self) -> impl Iterator<Item = SaplingIvk> {
-        // see comment inside `get_all_ivks`
-
-        let (memory, ledger) = match self {
-            Self::Memory(this) => (
-                Some(
-                    this.get_all_extfvks()
-                        .into_iter()
-                        .map(|extfvk| extfvk.fvk.vk.ivk())
-                        .filter(|key| this.have_spending_key(&key))
-                        // we collect to avoid borrowing this
-                        // and causing lifetime issues
-                        .collect::<Vec<_>>()
-                        .into_iter(),
-                ),
-                None,
-            ),
-            #[cfg(feature = "ledger-support")]
-            // with the ledger all known ivks are spendable
-            Self::Ledger(this) => (
-                None,
-                Some(
-                    this.get_all_ivks()
-                        .await
-                        .map(|(ivk, _)| ivk),
-                ),
-            ),
-        };
-
-        memory
-            .into_iter()
-            .flatten()
-            .chain(ledger.into_iter().flatten())
+    pub async fn get_all_spendable_oaddresses(&self) -> impl Iterator<Item = String> + '_ {
+        std::iter::once_with(|| todo!("not implemented"))
     }
+
+    // /// Retrieve all IVKs in the keystore which we have the spending key for
+    // pub async fn get_all_spendable_ivks(&self) -> impl Iterator<Item =
+    // SaplingIvk> {     // see comment inside `get_all_ivks`
+    //
+    //     let (memory, ledger) = match self {
+    //         Self::Memory(this) => (
+    //             Some(
+    //                 this.get_all_extfvks()
+    //                     .into_iter()
+    //                     .map(|extfvk| extfvk.fvk.vk.ivk())
+    //                     .filter(|key| this.have_sapling_spending_key(&key))
+    //                     // we collect to avoid borrowing this
+    //                     // and causing lifetime issues
+    //                     .collect::<Vec<_>>()
+    //                     .into_iter(),
+    //             ),
+    //             None,
+    //         ),
+    //         #[cfg(feature = "ledger-support")]
+    //         // with the ledger all known ivks are spendable
+    //         Self::Ledger(this) => (
+    //             None,
+    //             Some(
+    //                 this.get_all_ivks()
+    //                     .await
+    //                     .map(|(ivk, _)| ivk),
+    //             ),
+    //         ),
+    //     };
+    //
+    //     memory
+    //         .into_iter()
+    //         .flatten()
+    //         .chain(ledger.into_iter().flatten())
+    // }
 
     /// Retrieve a HashMap to lookup a public key from the transparent address
     pub async fn get_taddr_to_key_map(&self) -> HashMap<String, SecpPublicKey> {
@@ -316,7 +398,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
         }
     }
 
-    /// Compute wheter the given `addr` is a shielded address w.r.t. the given
+    /// Compute whether the given `addr` is a shielded address w.r.t. the given
     /// set of params
     pub fn is_shielded_address(
         addr: &String,
@@ -392,19 +474,27 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
     }
 
     /// Ensure we have the spending key of the given viewing key in the keystore
-    pub async fn have_spending_key(
+    pub async fn have_sapling_spending_key(
         &self,
-        ivk: &SaplingIvk,
+        extfvk: &ExtendedFullViewingKey,
     ) -> bool {
         match self {
-            Self::Memory(this) => this.have_spending_key(ivk),
+            Self::Memory(this) => this.have_sapling_spending_key(extfvk),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .get_all_ivks()
-                .await
-                .find(|(k, _)| ivk.to_repr() == k.to_repr())
-                .is_some(),
+            Self::Ledger(this) => {
+                let ivks = this.get_all_sapling_ivks().await;
+                ivks.into_iter()
+                    .any(|(ivk, _)| ivk.to_repr() == extfvk.fvk.vk.ivk().to_repr())
+            },
         }
+    }
+
+    /// Ensure we have the spending key of the given viewing key in the keystore
+    pub async fn have_orchard_spending_key(
+        &self,
+        _ivk: &FullViewingKey,
+    ) -> bool {
+        todo!("not implemented")
     }
 
     /// Create a new transparent address
@@ -423,6 +513,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
             #[cfg(feature = "ledger-support")]
             Self::Ledger(this) => this.add_zaddr().await,
         }
+    }
+
+    pub async fn add_oaddr(&mut self) -> String {
+        todo!("not implemented")
     }
 
     // this is the same code as Note's cm_full_point
@@ -474,7 +568,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
                     .get_all_extfvks()
                     .into_iter()
                     .find(|extfvk| extfvk.fvk.vk.ivk().to_repr() == ivk.to_repr())
-                    .ok_or(format!("Error: unknown key"))?;
+                    .ok_or("Error: unknown key".to_string())?;
 
                 Ok(note.nf(&extfvk.fvk.vk.nk, position))
             },
@@ -536,7 +630,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
             1 => LedgerKeystore::read(reader, config)
                 .await
                 .map(Into::into),
-            _ => Err(io::Error::new(ErrorKind::InvalidData, format!("Unknown keystore variant"))),
+            _ => Err(io::Error::new(ErrorKind::InvalidData, "Unknown keystore variant".to_string())),
         }
     }
 }
@@ -547,9 +641,9 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
 
     fn add_sapling_spend(
         &mut self,
-        key: &zcash_primitives::sapling::SaplingIvk,
+        key: &SaplingIvk,
         diversifier: zcash_primitives::sapling::Diversifier,
-        note: zcash_primitives::sapling::Note,
+        note: Note,
         merkle_path: zcash_primitives::merkle_tree::MerklePath<zcash_primitives::sapling::Node>,
     ) -> Result<&mut Self, Self::Error> {
         match self {
@@ -567,8 +661,8 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
 
     fn add_sapling_output(
         &mut self,
-        ovk: Option<zcash_primitives::keys::OutgoingViewingKey>,
-        to: zcash_primitives::sapling::PaymentAddress,
+        ovk: Option<OutgoingViewingKey>,
+        to: PaymentAddress,
         value: zcash_primitives::transaction::components::Amount,
         memo: zcash_primitives::memo::MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
@@ -606,7 +700,7 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
 
     fn add_transparent_output(
         &mut self,
-        to: &zcash_primitives::legacy::TransparentAddress,
+        to: &TransparentAddress,
         value: zcash_primitives::transaction::components::Amount,
     ) -> Result<&mut Self, Self::Error> {
         match self {
@@ -624,8 +718,8 @@ impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
 
     fn send_change_to(
         &mut self,
-        ovk: zcash_primitives::keys::OutgoingViewingKey,
-        to: zcash_primitives::sapling::PaymentAddress,
+        ovk: OutgoingViewingKey,
+        to: PaymentAddress,
     ) -> &mut Self {
         match self {
             Self::Memory(this) => {

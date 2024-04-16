@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
+    iter::FromIterator,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -9,6 +10,7 @@ use std::{
 
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
+use orchard::note_encryption::OrchardDomain;
 use tokio::{
     sync::{
         mpsc::{unbounded_channel, UnboundedSender},
@@ -17,6 +19,7 @@ use tokio::{
     task::JoinHandle,
 };
 use zcash_client_backend::encoding::encode_payment_address;
+use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 use zcash_primitives::{
     consensus::{self, BlockHeight},
     legacy::TransparentAddress,
@@ -32,6 +35,7 @@ use crate::{
         data::OutgoingTxMetadata,
         keys::{Keystores, ToBase58Check},
         wallet_txns::WalletTxns,
+        LightWallet,
     },
 };
 
@@ -200,8 +204,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         price: Option<f64>,
     ) {
         // Collect our t-addresses for easy checking
-        // by collecting into a set we do more efficient lookup
-        // and avoid duplicates (shouldn't be any anyways)
         let taddrs_set = keys
             .read()
             .await
@@ -241,6 +243,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 }
             }
         }
+
         // Remember if this is an outgoing Tx. Useful for when we want to grab the
         // outgoing metadata.
         let mut is_outgoing_tx = false;
@@ -303,52 +306,72 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             let unspent_nullifiers = wallet_txns
                 .read()
                 .await
-                .get_unspent_nullifiers();
+                .get_unspent_s_nullifiers();
             if let Some(s_bundle) = tx.sapling_bundle() {
                 for s in s_bundle.shielded_spends.iter() {
                     if let Some((nf, value, txid)) = unspent_nullifiers
                         .iter()
                         .find(|(nf, _, _)| *nf == s.nullifier)
                     {
-                        wallet_txns.write().await.add_new_spent(
-                            tx.txid(),
-                            height,
-                            unconfirmed,
-                            block_time,
-                            *nf,
-                            *value,
-                            *txid,
-                        );
+                        wallet_txns
+                            .write()
+                            .await
+                            .add_new_s_spent(tx.txid(), height, unconfirmed, block_time, *nf, *value, *txid);
                     }
                 }
             }
         }
 
         // Collect all our z addresses, to check for change
+        let z_addresses: HashSet<String> = HashSet::from_iter(
+            keys.read()
+                .await
+                .get_all_zaddresses()
+                .await
+                .into_iter(),
+        );
+        let u_addresses: HashSet<String> = HashSet::from_iter(
+            keys.read()
+                .await
+                .get_all_uaddresses()
+                .await
+                .into_iter(),
+        );
+
         // Collect all our OVKs, to scan for outputs
-        let (z_addresses, ovks, ivks) = {
+        let (ovks, s_ivks, extfvks) = {
             let guard = keys.read().await;
 
-            let (addrs, ovks, ivks) =
-                tokio::join!(guard.get_all_zaddresses(), guard.get_all_ovks(), guard.get_all_ivks());
+            let extfvks = guard
+                .get_all_extfvks()
+                .await
+                .into_iter()
+                .collect::<Vec<_>>();
 
-            (addrs.collect::<HashSet<_>>(), ovks.collect::<Vec<_>>(), ivks.collect::<Vec<_>>())
+            let ovks = extfvks
+                .iter()
+                .map(|k| k.fvk.ovk.clone())
+                .collect::<Vec<_>>();
+
+            let s_ivks = extfvks
+                .iter()
+                .map(|k| k.fvk.vk.ivk())
+                .collect::<Vec<_>>();
+
+            (ovks, s_ivks, extfvks)
         };
-
-        // Step 4: Scan shielded sapling outputs to see if anyone of them is us, and if
+        // Step 4a: Scan shielded sapling outputs to see if anyone of them is us, and if
         // it is, extract the memo. Note that if this is invoked by a
         // transparent transaction, and we have not seen this Tx from the
-        // trial_decryptions processor, the Note might not exist, and the memo
+        // trial_decryption processor, the Note might not exist, and the memo
         // updating might be a No-Op. That's Ok, the memo will get updated when this Tx
         // is scanned a second time by the Full Tx Fetcher
         let mut outgoing_metadatas = vec![];
+
         if let Some(s_bundle) = tx.sapling_bundle() {
             for output in s_bundle.shielded_outputs.iter() {
-                // let cmu = output.cmu;
-                // let ct = output.enc_ciphertext;
-
                 // Search all of our keys
-                for (_, ivk) in ivks.iter().enumerate() {
+                for (i, ivk) in s_ivks.iter().enumerate() {
                     let (note, to, memo_bytes) =
                         match try_sapling_note_decryption(&config.get_params(), height, &ivk, output) {
                             Some(ret) => ret,
@@ -360,7 +383,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                         wallet_txns
                             .write()
                             .await
-                            .add_pending_note(tx.txid(), height, block_time as u64, note.clone(), to, &ivk);
+                            .add_pending_note(
+                                tx.txid(),
+                                height,
+                                block_time as u64,
+                                note.clone(),
+                                to,
+                                &extfvks.get(i).unwrap(),
+                            );
                     }
 
                     let memo = memo_bytes
@@ -370,7 +400,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                     wallet_txns
                         .write()
                         .await
-                        .add_memo_to_note(&tx.txid(), note, memo);
+                        .add_memo_to_s_note(&tx.txid(), note, memo);
                 }
 
                 // Also scan the output to see if it can be decoded with our OutgoingViewKey
@@ -414,6 +444,81 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 outgoing_metadatas.extend(omds);
             }
         }
+
+        // Step 4b: Scan the orchard part of the bundle to see if there are any memos.
+        // We'll also scan the orchard outputs with our OutgoingViewingKey, to
+        // see if we can decrypt outgoing metadata
+        let o_ivks: Vec<_> = keys
+            .read()
+            .await
+            .get_all_orchard_ivks()
+            .await
+            .collect();
+
+        let o_ovk = keys
+            .read()
+            .await
+            .get_orchard_fvk(0)
+            .await
+            .map(|fvk| fvk.to_ovk(orchard::keys::Scope::External))
+            .unwrap_or_else(|| panic!("Failed to get Orchard Full Viewing Key"));
+
+        if let Some(o_bundle) = tx.orchard_bundle() {
+            // let orchard_actions = o_bundle
+            //     .actions()
+            //     .into_iter()
+            //     .map(|oa| (OrchardDomain::for_action(oa), oa))
+            //     .collect::<Vec<_>>();
+
+            // let decrypts = try_note_decryption(o_ivks.as_ref(),
+            // orchard_actions.as_ref());
+            for oa in o_bundle.actions() {
+                let domain = OrchardDomain::for_action(oa);
+
+                for (ivk_num, ivk) in o_ivks.iter().enumerate() {
+                    if let Some((note, _address, memo_bytes)) = try_note_decryption(&domain, ivk, oa) {
+                        if let Ok(memo) = Memo::from_bytes(&memo_bytes) {
+                            wallet_txns
+                                .write()
+                                .await
+                                .add_memo_to_o_note(
+                                    &tx.txid(),
+                                    &keys
+                                        .read()
+                                        .await
+                                        .get_orchard_fvk(ivk_num)
+                                        .await
+                                        .unwrap(),
+                                    note,
+                                    memo,
+                                );
+                        }
+                    }
+                }
+
+                // Also attempt output recovery using ovk to see if this wan an outgoing tx.
+                if let Some((note, ua_address, memo_bytes)) =
+                    try_output_recovery_with_ovk(&domain, &o_ovk, oa, oa.cv_net(), &oa.encrypted_note().out_ciphertext)
+                {
+                    is_outgoing_tx = true;
+                    let address = LightWallet::<P>::orchard_ua_address(&config, &ua_address);
+                    let memo = Memo::from_bytes(&memo_bytes).unwrap_or(Memo::default());
+
+                    info!(
+                        "Recovered output note of value {} memo {:?} sent to {}",
+                        note.value().inner(),
+                        memo,
+                        address
+                    );
+
+                    // If this is just our address with an empty memo, do nothing.
+                    if !(u_addresses.contains(&address) && memo == Memo::Empty) {
+                        outgoing_metadatas.push(OutgoingTxMetadata { address, value: note.value().inner(), memo });
+                    }
+                }
+            }
+        }
+
         // Step 5. Process t-address outputs
         // If this Tx in outgoing, i.e., we recieved sent some money in this Tx, then we
         // need to grab all transparent outputs that don't belong to us as the

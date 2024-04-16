@@ -73,7 +73,7 @@ impl GrpcConnector {
             let uri = uri.clone();
             while let Some((height, result_tx)) = rx.recv().await {
                 result_tx
-                    .send(Self::get_sapling_tree(uri.clone(), height).await)
+                    .send(Self::get_merkle_tree(uri.clone(), height).await)
                     .unwrap()
             }
         });
@@ -353,7 +353,7 @@ impl GrpcConnector {
         Ok(())
     }
 
-    pub async fn get_sapling_tree(
+    pub async fn get_merkle_tree(
         uri: http::Uri,
         height: u64,
     ) -> Result<TreeState, String> {

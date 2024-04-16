@@ -3,9 +3,10 @@ use std::sync::Arc;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use tokio::join;
-use tokio::sync::mpsc::{channel, Sender, UnboundedSender};
-use tokio::sync::{oneshot, RwLock};
-use tokio::task::JoinHandle;
+use tokio::sync::mpsc::{channel, Sender};
+use tokio::sync::oneshot;
+use tokio::sync::RwLock;
+use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::sapling::Nullifier;
 use zcash_primitives::transaction::TxId;
@@ -76,7 +77,7 @@ impl UpdateNotes {
             wallet_txns
                 .write()
                 .await
-                .set_note_witnesses(&txid, &nullifier, witnesses);
+                .set_s_note_witnesses(&txid, &nullifier, witnesses);
         }
     }
 
@@ -169,19 +170,14 @@ impl UpdateNotes {
                             let value = wallet_txns
                                 .write()
                                 .await
-                                .mark_txid_nf_spent(txid, &nf, &spent_txid, spent_at_height);
+                                .mark_txid_s_nf_spent(&txid, &nf, &spent_txid, spent_at_height);
 
                             // Record the future tx, the one that has spent the nullifiers recieved in this
                             // Tx in the wallet
-                            wallet_txns.write().await.add_new_spent(
-                                spent_txid,
-                                spent_at_height,
-                                false,
-                                ts,
-                                nf,
-                                value,
-                                txid,
-                            );
+                            wallet_txns
+                                .write()
+                                .await
+                                .add_new_s_spent(spent_txid, spent_at_height, false, ts, nf, value, txid);
 
                             // Send the future Tx to be fetched too, in case it has only spent nullifiers
                             // and not received any change

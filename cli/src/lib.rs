@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
@@ -261,7 +261,7 @@ pub fn attempt_recover_seed(_password: Option<String>) {
         server: "0.0.0.0:0".parse().unwrap(),
         chain_name: "main".to_string(),
         sapling_activation_height: 0,
-        anchor_offset: [0u32; 5],
+        anchor_offset: 0,
         monitor_mempool: false,
         data_dir: None,
         params: MainNetwork,

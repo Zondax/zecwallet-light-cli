@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use tokio::join;
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::oneshot;
 use tokio::{
-    join,
-    sync::{
-        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
-        oneshot, RwLock,
-    },
+    sync::{mpsc::UnboundedSender, RwLock},
     task::JoinHandle,
 };
 use zcash_primitives::{
@@ -235,7 +235,7 @@ mod test {
                 }));
             }
 
-            // Dispatch a set of recievers
+            // Dispatch a set of receivers
             result_tx.send(tx_rs).unwrap();
 
             let total = try_join_all(tx_rs_workers)

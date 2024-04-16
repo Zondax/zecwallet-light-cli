@@ -61,17 +61,17 @@ impl From<LedgerError> for std::io::Error {
     fn from(err: LedgerError) -> Self {
         use std::io::ErrorKind;
 
-        let kind = match &err {
+        let kind = match err {
             LedgerError::InitializationError(_) => ErrorKind::InvalidInput,
             LedgerError::Ledger(_) => ErrorKind::BrokenPipe,
-            LedgerError::Builder(_)
-            | LedgerError::InvalidPathLength(_)
-            | LedgerError::InvalidPublicKey
-            | LedgerError::DiversifierIndexOverflow
-            | LedgerError::KeyNotFound => ErrorKind::InvalidData,
+            LedgerError::Builder(_) => ErrorKind::InvalidData,
+            LedgerError::InvalidPathLength(_) => ErrorKind::InvalidData,
+            LedgerError::InvalidPublicKey => ErrorKind::InvalidData,
+            LedgerError::DiversifierIndexOverflow => ErrorKind::InvalidData,
+            LedgerError::KeyNotFound => ErrorKind::InvalidData,
         };
 
-        std::io::Error::new(kind, err)
+        std::io::Error::new(kind, format!("{}", err))
     }
 }
 
@@ -196,7 +196,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     }
 
     /// Retrieve all the cached/known IVKs
-    pub async fn get_all_ivks(&self) -> impl Iterator<Item = (SaplingIvk, Diversifier)> {
+    pub async fn get_all_sapling_ivks(&self) -> impl Iterator<Item = (SaplingIvk, Diversifier)> {
         let guard = self.shielded_addrs.read().await;
 
         guard
@@ -221,7 +221,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     pub async fn get_all_zaddresses(&self) -> impl Iterator<Item = String> + '_ {
         let hrp = self.config.hrp_sapling_address();
 
-        self.get_all_ivks()
+        self.get_all_sapling_ivks()
             .await
             .map(|(ivk, d)| {
                 ivk.to_payment_address(d)

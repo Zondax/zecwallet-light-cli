@@ -2,12 +2,12 @@ use std::{convert::TryInto, sync::Arc};
 
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
+use orchard::tree::MerkleHashOrchard;
 use prost::Message;
 use rand::{rngs::OsRng, RngCore};
 use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
-use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
@@ -49,6 +49,12 @@ pub fn random_u8_32() -> [u8; 32] {
 }
 
 pub fn tree_to_string(tree: &CommitmentTree<Node>) -> String {
+    let mut b1 = vec![];
+    tree.write(&mut b1).unwrap();
+    hex::encode(b1)
+}
+
+pub fn orchardtree_to_string(tree: &CommitmentTree<MerkleHashOrchard>) -> String {
     let mut b1 = vec![];
     tree.write(&mut b1).unwrap();
     hex::encode(b1)
@@ -109,7 +115,7 @@ impl FakeTransaction {
             rseed: Rseed::AfterZip212(rseed_bytes),
         };
 
-        let encryptor = NoteEncryption::<SaplingDomain<consensus::Network>>::new(
+        let encryptor = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             ovk,
             note.clone(),
             to.clone(),
@@ -218,6 +224,8 @@ impl FakeTransaction {
 
         let taddr_bytes = hash160.finalize();
 
+        // let mut t_bundle = self.td.transparent_bundle().unwrap().clone();
+
         let mut t_bundle = if self.td.transparent_bundle().is_some() {
             self.td
                 .transparent_bundle()
@@ -231,7 +239,6 @@ impl FakeTransaction {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
         });
-        self.td.transparent_bundle = Some(t_bundle);
 
         self.td = TransactionData::from_parts(
             self.td.version(),
@@ -285,7 +292,7 @@ impl FakeTransaction {
 
     pub fn into_tx(mut self) -> (CompactTx, Transaction, Vec<String>) {
         let tx = self.td.freeze().unwrap();
-        self.ctx.hash = tx.txid().clone().as_ref().to_vec();
+        self.ctx.hash = tx.txid().as_ref().to_vec();
 
         (self.ctx, tx, self.taddrs_involved)
     }

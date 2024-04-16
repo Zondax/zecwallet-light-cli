@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::{FutureExt, Stream};
+use orchard::tree::MerkleHashOrchard;
 use rand::rngs::OsRng;
 use rand::Rng;
 use tempdir::TempDir;
@@ -21,7 +22,7 @@ use zcash_primitives::transaction::{Transaction, TxId};
 
 use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;
-use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
+use crate::blaze::test_utils::{orchardtree_to_string, tree_to_string, FakeCompactBlockList};
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
 use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
 use crate::compact_formats::{
@@ -534,20 +535,23 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
             });
 
         let mut ts = TreeState::default();
-        ts.hash = BlockHash::from_slice(
-            &self
-                .data
-                .read()
-                .await
-                .blocks
-                .iter()
-                .find(|cb| cb.height == block.height)
-                .expect(format!("Couldn't find block {}", block.height).as_str())
-                .hash[..],
-        )
-        .to_string();
+        let hash = if let Some(b) = self
+            .data
+            .read()
+            .await
+            .blocks
+            .iter()
+            .find(|cb| cb.height == block.height)
+        {
+            b.hash.clone()
+        } else {
+            [0u8; 32].to_vec()
+        };
+
+        ts.hash = BlockHash::from_slice(&hash[..]).to_string();
         ts.height = block.height;
         ts.tree = tree_to_string(&tree);
+        ts.orchard_tree = orchardtree_to_string(&CommitmentTree::<MerkleHashOrchard>::empty());
 
         Ok(Response::new(ts))
     }

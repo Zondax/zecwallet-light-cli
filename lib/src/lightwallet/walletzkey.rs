@@ -4,8 +4,8 @@ use std::io::{Error, ErrorKind};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use sodiumoxide::crypto::secretbox;
 use zcash_encoding::{Optional, Vector};
+use zcash_primitives::consensus;
 use zcash_primitives::{
-    consensus,
     sapling::PaymentAddress,
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
@@ -108,6 +108,10 @@ impl WalletZKey {
 
     pub fn have_spending_key(&self) -> bool {
         self.extsk.is_some() || self.enc_key.is_some() || self.hdkey_num.is_some()
+    }
+
+    pub fn extfvk(&self) -> &'_ ExtendedFullViewingKey {
+        &self.extfvk
     }
 
     fn serialized_version() -> u8 {
@@ -315,7 +319,7 @@ pub mod tests {
             chain_name: "zs".to_string(),
             monitor_mempool: false,
             sapling_activation_height: 0,
-            anchor_offset: [0u32; 5],
+            anchor_offset: 0,
             data_dir: None,
             params: UnitTestNetwork,
         }
