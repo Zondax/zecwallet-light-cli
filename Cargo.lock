@@ -243,6 +243,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 
 [[package]]
+name = "base64"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
+
+[[package]]
 name = "base64ct"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3557,7 +3563,7 @@ dependencies = [
  "bech32",
  "bs58",
  "f4jumble",
- "zcash_encoding",
+ "zcash_encoding 0.1.0",
 ]
 
 [[package]]
@@ -3591,6 +3597,16 @@ dependencies = [
 name = "zcash_encoding"
 version = "0.1.0"
 source = "git+https://github.com/adityapk00/librustzcash?rev=adf49f8b848a5ac85e1476354614eeae9880206a#adf49f8b848a5ac85e1476354614eeae9880206a"
+dependencies = [
+ "byteorder",
+ "nonempty",
+]
+
+[[package]]
+name = "zcash_encoding"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f03391b81727875efa6ac0661a20883022b6fba92365dc121c48fa9b00c5aac0"
 dependencies = [
  "byteorder",
  "nonempty",
@@ -3640,7 +3656,7 @@ dependencies = [
  "sha2 0.9.9",
  "subtle",
  "zcash_address",
- "zcash_encoding",
+ "zcash_encoding 0.1.0",
  "zcash_note_encryption",
 ]
 
@@ -3684,7 +3700,7 @@ dependencies = [
  "arr_macro",
  "async-trait",
  "base58",
- "base64 0.13.1",
+ "base64 0.22.0",
  "bls12_381",
  "bytemuck",
  "byteorder",
@@ -3730,7 +3746,7 @@ dependencies = [
  "zcash-hsmbuilder",
  "zcash_address",
  "zcash_client_backend",
- "zcash_encoding",
+ "zcash_encoding 0.2.0",
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",

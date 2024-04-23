@@ -20,7 +20,7 @@ embed_params = []
 
 [dependencies]
 arr_macro = "0.2"
-base64 = "0.13"
+base64 = "0.22"
 bytes = "0.4"
 log4rs = "1.2.0"
 rand = "0.8.5"
@@ -65,7 +65,7 @@ zcash_address = "0.1"
 zcash_primitives = { version = "0.7", features = ["transparent-inputs"] }
 zcash_client_backend = "0.5"
 zcash_proofs = { version = "0.7",  features = ["multicore"] }
-zcash_encoding = "0.1"
+zcash_encoding = "0.2"
 zcash_note_encryption = { version = "0.1", features = ["pre-zip-212"] }
 
 # zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", rev = "324a0851113df4ea77457b5711392beabd021407", default-features = false, features = ["zecwallet-compat"], optional = true }
@@ -78,8 +78,8 @@ ledger-transport-hid = { version = "0.9", optional = true }
 ledger-transport = { version = "0.9", optional = true }
 zx-bip44 = { version = "0.1.0", optional = true }
 bytemuck = { version = "1.15", optional = true }
-derive_more = "0.99.17"
-tap = "1.0.1"
+derive_more = "0.99"
+tap = "1.0"
 
 [dev-dependencies]
 portpicker = "0.1.1"

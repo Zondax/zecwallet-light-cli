@@ -1721,16 +1721,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 };
 
                 match address_to_key.get(&utxo.address) {
-                    Some(pk) => builder
-                        .add_transparent_input(*pk, outpoint.clone(), coin.clone())
-                        .map(|_| ())
-                        .map_err(|_| zcash_primitives::transaction::builder::Error::InvalidAmount),
+                    Some(pk) => {
+                        todo!("Implement correctly")
+                        // builder
+                        // .add_transparent_input(*pk, outpoint.clone(),
+                        // coin.clone()) .map(|_| ())
+                        // .map_err(|_|
+                        // zcash_primitives::transaction::builder::Error::InvalidAmount)
+                    },
                     None => {
                         // Something is very wrong
                         let e = format!("Couldn't find the key for taddr {}", utxo.address);
                         error!("{}", e);
 
-                        Err(zcash_primitives::transaction::builder::Error::InvalidAmount)
+                        Err::<(), _>(zcash_primitives::transaction::builder::Error::InvalidAmount)
                     },
                 }
             })
