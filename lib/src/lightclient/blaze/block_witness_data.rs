@@ -22,6 +22,10 @@ use zcash_primitives::{
 };
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
+use crate::lightclient::MERKLE_DEPTH;
+use crate::lightwallet::data::blockdata::BlockData;
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::data::witnesscache::WitnessCache;
 use crate::utils::vec_to_array;
 use crate::{
     grpc::GrpcConnector,
@@ -30,11 +34,7 @@ use crate::{
         checkpoints::get_all_main_checkpoints,
         config::{LightClientConfig, MAX_REORG},
     },
-    lightwallet::{
-        data::{BlockData, WalletTx, WitnessCache},
-        wallet_txns::WalletTxns,
-        MERKLE_DEPTH,
-    },
+    lightwallet::wallet_txns::WalletTxns,
 };
 
 pub struct BlockAndWitnessData {
@@ -876,16 +876,15 @@ mod test {
     use super::BlockAndWitnessData;
     use crate::lightclient::blaze::sync_status::SyncStatus;
     use crate::lightclient::blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList};
+    use crate::lightclient::config::LightClientConfig;
     use crate::lightclient::config::UnitTestNetwork;
+    use crate::lightwallet::data::blockdata::BlockData;
     use crate::lightwallet::wallet_txns::WalletTxns;
-    use crate::{lightclient::config::LightClientConfig, lightwallet::data::BlockData};
 
     #[tokio::test]
     async fn setup_finish_simple() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(UnitTestNetwork, None),
-            25_000,
-        );
+        let mut nw =
+            BlockAndWitnessData::new_with_batchsize(&LightClientConfig::new_unconnected(UnitTestNetwork, None), 25_000);
 
         let cb = FakeCompactBlock::new(1, BlockHash([0u8; 32])).into_cb();
         let blks = vec![BlockData::new(cb)];
@@ -901,10 +900,8 @@ mod test {
 
     #[tokio::test]
     async fn setup_finish_large() {
-        let mut nw = BlockAndWitnessData::new_with_batchsize(
-            &LightClientConfig::create_unconnected(UnitTestNetwork, None),
-            25_000,
-        );
+        let mut nw =
+            BlockAndWitnessData::new_with_batchsize(&LightClientConfig::new_unconnected(UnitTestNetwork, None), 25_000);
 
         let existing_blocks = FakeCompactBlockList::new(200).into_blockdatas();
 
@@ -923,7 +920,7 @@ mod test {
 
     #[tokio::test]
     async fn from_sapling_genesis() {
-        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
+        let mut config = LightClientConfig::new_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let blocks = FakeCompactBlockList::new(200).into_blockdatas();
@@ -969,7 +966,7 @@ mod test {
 
     #[tokio::test]
     async fn with_existing_batched() {
-        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
+        let mut config = LightClientConfig::new_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let mut blocks = FakeCompactBlockList::new(200).into_blockdatas();
@@ -1022,7 +1019,7 @@ mod test {
 
     #[tokio::test]
     async fn with_reorg() {
-        let mut config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
+        let mut config = LightClientConfig::new_unconnected(UnitTestNetwork, None);
         config.sapling_activation_height = 1;
 
         let mut blocks = FakeCompactBlockList::new(100).into_blockdatas();

@@ -23,17 +23,18 @@ use zcash_primitives::{
 use crate::{
     lightclient::config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
     lightwallet::{
-        keys::{double_sha256, InsecureKeystore, Keystore, KeystoreBuilderLifetime, ToBase58Check},
+        keys::{InsecureKeystore, Keystore, KeystoreBuilderLifetime},
         utils,
-        wallettkey::{WalletTKey, WalletTKeyType},
-        walletzkey::{WalletZKey, WalletZKeyType},
     },
 };
 
-mod builder;
+pub(crate) mod builder;
 pub use builder::{BuilderError as InMemoryBuilderError, InMemoryBuilder};
 
-use crate::lightwallet::walletokey::WalletOKey;
+use crate::lightwallet::keys::utils::{double_sha256, ToBase58Check};
+use crate::lightwallet::walletkeys::walletokey::WalletOKey;
+use crate::lightwallet::walletkeys::wallettkey::{WalletTKey, WalletTKeyType};
+use crate::lightwallet::walletkeys::walletzkey::{WalletZKey, WalletZKeyType};
 
 // Manages all the keys in the wallet. Note that the RwLock for this is present
 // in `lightwallet.rs`, so we'll assume that this is already gone through a
@@ -75,7 +76,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
 
     #[cfg(test)]
     pub fn new_empty(params: P) -> Self {
-        let config = LightClientConfig::create_unconnected(params, None);
+        let config = LightClientConfig::new_unconnected(params, None);
         Self {
             config,
             encrypted: false,

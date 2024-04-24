@@ -19,11 +19,11 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
-use super::syncdata::BlazeSyncData;
-use crate::{
-    grpc::CompactBlock,
-    lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
-};
+use super::sync_data::BlazeSyncData;
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::keys::keystores::Keystores;
+use crate::lightwallet::options::MemoDownloadOption;
+use crate::{grpc::CompactBlock, lightwallet::wallet_txns::WalletTxns};
 
 pub struct TrialDecryptions<P> {
     keys: Arc<RwLock<Keystores<P>>>,

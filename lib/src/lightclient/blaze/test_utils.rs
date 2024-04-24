@@ -9,6 +9,7 @@ use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
+use zcash_primitives::transaction::TxVersion;
 use zcash_primitives::{
     block::BlockHash,
     consensus::{self, BlockHeight, BranchId, TEST_NETWORK},
@@ -33,13 +34,9 @@ use zcash_primitives::{
 use zcash_proofs::sapling::SaplingProvingContext;
 
 use crate::grpc::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx};
-use crate::{
-    lightclient::{
-        test_server::TestServerData,
-        test_utils::{clone_transactiondata, new_transactiondata},
-    },
-    lightwallet::{data::BlockData, keys::ToBase58Check},
-};
+use crate::lightclient::test_server::TestServerData;
+use crate::lightwallet::data::blockdata::BlockData;
+use crate::lightwallet::keys::utils::ToBase58Check;
 
 pub fn random_u8_32() -> [u8; 32] {
     let mut b = [0u8; 32];
@@ -460,7 +457,7 @@ impl FakeCompactBlockList {
         }
     }
 
-    pub fn add_ftx(
+    pub fn add_fake_tx(
         &mut self,
         ftx: FakeTransaction,
     ) -> (Transaction, u64) {
@@ -487,7 +484,7 @@ impl FakeCompactBlockList {
         let mut ftx = FakeTransaction::new();
         ftx.add_tx_spending(nf, value, ovk, to);
 
-        let (tx, _) = self.add_ftx(ftx);
+        let (tx, _) = self.add_fake_tx(ftx);
 
         tx
     }
@@ -502,7 +499,7 @@ impl FakeCompactBlockList {
         let mut ftx = FakeTransaction::new();
         let note = ftx.add_tx_paying(extfvk, value);
 
-        let (tx, height) = self.add_ftx(ftx);
+        let (tx, height) = self.add_fake_tx(ftx);
 
         (tx, height, note)
     }
@@ -681,4 +678,49 @@ impl zcash_hsmbuilder::txprover::HsmTxProver for FakeTxProver {
     ) -> Result<Signature, ()> {
         TxProver::binding_sig(self, ctx, value_balance, sighash)
     }
+}
+
+// Create a fake tx data
+pub fn new_transactiondata() -> TransactionData<Authorized> {
+    TransactionData::from_parts(TxVersion::Sapling, BranchId::Sapling, 0, 0u32.into(), None, None, None, None)
+}
+
+/// Clones the given `TransactionData` into two identical copies.
+///
+/// This function extracts the optional `sapling_bundle` and
+/// `transparent_bundle` from the input `TransactionData`, clones them if they
+/// exist, and then constructs two new `TransactionData` instances using these
+/// cloned bundles.
+///
+/// @param t The `TransactionData` to clone.
+/// @returns A tuple containing two cloned `TransactionData` instances.
+pub fn clone_transactiondata(
+    t: TransactionData<Authorized>
+) -> (TransactionData<Authorized>, TransactionData<Authorized>) {
+    let sapling_bundle = t.sapling_bundle().cloned();
+    let transparent_bundle = t.transparent_bundle().cloned();
+
+    let td1 = TransactionData::from_parts(
+        TxVersion::Sapling,
+        BranchId::Sapling,
+        0,
+        0u32.into(),
+        transparent_bundle.clone(),
+        None,
+        sapling_bundle.clone(),
+        None,
+    );
+
+    let td2 = TransactionData::from_parts(
+        TxVersion::Sapling,
+        BranchId::Sapling,
+        0,
+        0u32.into(),
+        transparent_bundle,
+        None,
+        sapling_bundle,
+        None,
+    );
+
+    (td1, td2)
 }

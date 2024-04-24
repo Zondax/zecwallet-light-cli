@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use log::warn;
+use log::{info, warn};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use tokio::sync::oneshot;
@@ -34,31 +34,32 @@ impl GrpcConnector {
         Self { uri }
     }
 
-    async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, Error> {
-        let channel = if self.uri.scheme_str() == Some("http") {
-            // println!("http");
-            Channel::builder(self.uri.clone())
-                .connect()
-                .await?
-        } else {
-            // println!("https");
-            let mut tls = ClientTlsConfig::new().domain_name(self.uri.host().unwrap());
+    /// Retrieves the TLS configuration for the gRPC client based on the server
+    /// certificate.
+    async fn get_tls_config(&self) -> Result<ClientTlsConfig, Error> {
+        let mut tls_config = ClientTlsConfig::new().domain_name(self.uri.host().unwrap_or_default());
 
-            let server_cert = ServerCert::get("fullchain.pem")
-                .unwrap()
-                .data;
-            if server_cert.len() > 0 {
-                let server_root_ca_cert = Certificate::from_pem(server_cert);
-                tls = tls.ca_certificate(server_root_ca_cert);
+        if let Some(server_cert) = ServerCert::get("fullchain.pem") {
+            if !server_cert.data.is_empty() {
+                let server_root_ca_cert = Certificate::from_pem(server_cert.data);
+                tls_config = tls_config.ca_certificate(server_root_ca_cert);
             }
+        }
 
-            Channel::builder(self.uri.clone())
-                .tls_config(tls)?
-                // .timeout(Duration::from_secs(10))
-                // .connect_timeout(Duration::from_secs(10))
-                .connect()
-                .await?
-        };
+        Ok(tls_config)
+    }
+
+    async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>, Error> {
+        let mut channel_builder = Channel::builder(self.uri.clone());
+
+        if self.uri.scheme_str() != Some("http") {
+            let tls_config = self.get_tls_config().await?;
+            channel_builder = channel_builder.tls_config(tls_config)?;
+        }
+
+        info!("Connecting to {:?}", self.uri);
+
+        let channel = channel_builder.connect().await?;
 
         Ok(CompactTxStreamerClient::new(channel))
     }
@@ -480,4 +481,63 @@ impl GrpcConnector {
             Err(format!("Error: {:?}", send_response))
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use http::Uri;
+    use tokio::runtime::Runtime;
+
+    use crate::grpc::GrpcConnector;
+    use crate::lightclient::config::DEFAULT_SERVER;
+
+    /// Tests the `get_client` function to ensure it correctly handles the
+    /// creation of a GRPC client.
+    #[test]
+    fn test_get_client_success() {
+        let uri = DEFAULT_SERVER.parse::<Uri>().unwrap();
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = GrpcConnector::new(uri.clone());
+            let result = client.get_client().await;
+            assert!(result.is_ok(), "Expected Ok(_) value, got Err({:?})", result.err());
+        });
+    }
+    /// Tests the `get_client` function to ensure it correctly handles errors
+    /// during the creation of a GRPC client.
+    #[test]
+    fn test_get_client_error() {
+        let uri = DEFAULT_SERVER.parse::<Uri>().unwrap();
+
+        let rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = GrpcConnector::new(uri.clone());
+            let result = client.get_client().await;
+            assert!(result.is_err(), "Expected Err(_) value, got Ok");
+        });
+    }
+
+    // /// Tests the `get_info` function to ensure it correctly handles a
+    // successful response. #[test]
+    // fn test_get_info_success() {
+    //     let uri = "http://testserver:50051".parse::<Uri>().unwrap();
+    //     let rt = Runtime::new().unwrap();
+    //     rt.block_on(async {
+    //         let connector = GrpcConnector::new(uri.clone());
+    //         let result = connector.get_info(uri).await;
+    //         assert!(result.is_ok(), "Expected Ok(_) value, got Err");
+    //     });
+    // }
+    //
+    // /// Tests the `get_info` function to ensure it correctly handles an error
+    // from the GRPC client. #[test]
+    // fn test_get_info_error() {
+    //     let uri = "http://invalidserver:50051".parse::<Uri>().unwrap();
+    //     let rt = Runtime::new().unwrap();
+    //     rt.block_on(async {
+    //         let connector = GrpcConnector::new(uri.clone());
+    //         let result = connector.get_info(uri).await;
+    //         assert!(result.is_err(), "Expected Err(_) value, got Ok");
+    //     });
+    // }
 }

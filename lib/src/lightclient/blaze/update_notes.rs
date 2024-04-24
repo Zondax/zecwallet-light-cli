@@ -11,9 +11,10 @@ use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::sapling::Nullifier;
 use zcash_primitives::transaction::TxId;
 
-use super::syncdata::BlazeSyncData;
-use crate::lightwallet::MemoDownloadOption;
-use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
+use super::sync_data::BlazeSyncData;
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::options::MemoDownloadOption;
+use crate::lightwallet::wallet_txns::WalletTxns;
 
 /// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.

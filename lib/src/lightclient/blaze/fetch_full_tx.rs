@@ -28,16 +28,12 @@ use zcash_primitives::{
     transaction::{Transaction, TxId},
 };
 
-use super::syncdata::BlazeSyncData;
-use crate::{
-    lightclient::config::LightClientConfig,
-    lightwallet::{
-        data::OutgoingTxMetadata,
-        keys::{Keystores, ToBase58Check},
-        wallet_txns::WalletTxns,
-        LightWallet,
-    },
-};
+use super::sync_data::BlazeSyncData;
+use crate::lightwallet::data::outgoingtx::OutgoingTxMetadata;
+use crate::lightwallet::keys::keystores::Keystores;
+use crate::lightwallet::keys::utils::ToBase58Check;
+use crate::lightwallet::lightwallet::LightWallet;
+use crate::{lightclient::config::LightClientConfig, lightwallet::wallet_txns::WalletTxns};
 
 pub struct FetchFullTxns<P> {
     config: LightClientConfig<P>,

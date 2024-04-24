@@ -1,37 +1,22 @@
-use std::sync::mpsc;
-use std::{
-    collections::HashMap,
-    io::{self, ErrorKind},
-};
+use std::collections::HashMap;
+use std::io;
+use std::io::ErrorKind;
 
-use async_trait::async_trait;
 use derive_more::From;
-use group::GroupEncoding;
 use jubjub::AffinePoint;
 use orchard::keys::{FullViewingKey, IncomingViewingKey};
 use secp256k1::PublicKey as SecpPublicKey;
-use thiserror::Error;
 use zcash_client_backend::encoding::encode_payment_address;
-use zcash_primitives::transaction::builder::Progress;
-use zcash_primitives::transaction::Transaction;
+use zcash_primitives::consensus::{BlockHeight, Parameters};
+use zcash_primitives::keys::OutgoingViewingKey;
+use zcash_primitives::legacy::TransparentAddress;
+use zcash_primitives::sapling::{Note, Nullifier, PaymentAddress, SaplingIvk};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
-use zcash_primitives::{
-    consensus::{BlockHeight, Parameters},
-    keys::OutgoingViewingKey,
-    legacy::TransparentAddress,
-    sapling::{Note, Nullifier, PaymentAddress, SaplingIvk},
-};
 
-use super::Keystore;
-#[cfg(feature = "ledger-support")]
-use crate::lightwallet::keys::ledger::{LedgerBuilder, LedgerError, LedgerKeystore};
-use crate::{
-    lightclient::config::LightClientConfig,
-    lightwallet::keys::{
-        in_memory::{InMemoryBuilder, InMemoryBuilderError, InMemoryKeys},
-        Builder, SaplingMetadata, ToBase58Check, TxProver,
-    },
-};
+use crate::lightclient::config::LightClientConfig;
+use crate::lightwallet::keys::builders::Builders;
+use crate::lightwallet::keys::utils::ToBase58Check;
+use crate::lightwallet::keys::{InMemoryKeys, Keystore, LedgerKeystore};
 
 pub enum KeystoresKind {
     Memory,
@@ -45,25 +30,6 @@ pub enum Keystores<P> {
     Memory(InMemoryKeys<P>),
     #[cfg(feature = "ledger-support")]
     Ledger(LedgerKeystore<P>),
-}
-
-#[derive(From)]
-/// Enum based dispatcher for different transaction builders
-///
-/// Should be instantiated with [`Keystores::tx_builder`]
-pub enum Builders<'ks, P: Parameters> {
-    Memory(InMemoryBuilder<'ks, P>),
-    #[cfg(feature = "ledger-support")]
-    Ledger(LedgerBuilder<'ks, P>),
-}
-
-#[derive(Debug, Error)]
-pub enum BuildersError {
-    #[error(transparent)]
-    Memory(#[from] InMemoryBuilderError),
-    #[cfg(feature = "ledger-support")]
-    #[error(transparent)]
-    Ledger(#[from] LedgerError),
 }
 
 impl<P: Parameters> Keystores<P> {
@@ -522,6 +488,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
     // this is the same code as Note's cm_full_point
     fn compute_note_commitment(note: &Note) -> jubjub::SubgroupPoint {
         use byteorder::{LittleEndian, WriteBytesExt};
+        use group::GroupEncoding;
         use zcash_primitives::{
             constants::NOTE_COMMITMENT_RANDOMNESS_GENERATOR,
             sapling::pedersen_hash::{pedersen_hash, Personalization},
@@ -631,135 +598,6 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
                 .await
                 .map(Into::into),
             _ => Err(io::Error::new(ErrorKind::InvalidData, "Unknown keystore variant".to_string())),
-        }
-    }
-}
-
-#[async_trait]
-impl<'ks, P: Parameters + Send + Sync + 'static> Builder for Builders<'ks, P> {
-    type Error = BuildersError;
-
-    fn add_sapling_spend(
-        &mut self,
-        key: &SaplingIvk,
-        diversifier: zcash_primitives::sapling::Diversifier,
-        note: Note,
-        merkle_path: zcash_primitives::merkle_tree::MerklePath<zcash_primitives::sapling::Node>,
-    ) -> Result<&mut Self, Self::Error> {
-        match self {
-            Self::Memory(this) => this
-                .add_sapling_spend(key, diversifier, note, merkle_path)
-                .map(|_| ())?,
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .add_sapling_spend(key, diversifier, note, merkle_path)
-                .map(|_| ())?,
-        };
-
-        Ok(self)
-    }
-
-    fn add_sapling_output(
-        &mut self,
-        ovk: Option<OutgoingViewingKey>,
-        to: PaymentAddress,
-        value: zcash_primitives::transaction::components::Amount,
-        memo: zcash_primitives::memo::MemoBytes,
-    ) -> Result<&mut Self, Self::Error> {
-        match self {
-            Self::Memory(this) => this
-                .add_sapling_output(ovk, to, value, memo)
-                .map(|_| ())?,
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .add_sapling_output(ovk, to, value, memo)
-                .map(|_| ())?,
-        };
-
-        Ok(self)
-    }
-
-    fn add_transparent_input(
-        &mut self,
-        key: SecpPublicKey,
-        utxo: zcash_primitives::transaction::components::OutPoint,
-        coin: zcash_primitives::transaction::components::TxOut,
-    ) -> Result<&mut Self, Self::Error> {
-        match self {
-            Self::Memory(this) => this
-                .add_transparent_input(key, utxo, coin)
-                .map(|_| ())?,
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .add_transparent_input(key, utxo, coin)
-                .map(|_| ())?,
-        };
-
-        Ok(self)
-    }
-
-    fn add_transparent_output(
-        &mut self,
-        to: &TransparentAddress,
-        value: zcash_primitives::transaction::components::Amount,
-    ) -> Result<&mut Self, Self::Error> {
-        match self {
-            Self::Memory(this) => this
-                .add_transparent_output(to, value)
-                .map(|_| ())?,
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .add_transparent_output(to, value)
-                .map(|_| ())?,
-        };
-
-        Ok(self)
-    }
-
-    fn send_change_to(
-        &mut self,
-        ovk: OutgoingViewingKey,
-        to: PaymentAddress,
-    ) -> &mut Self {
-        match self {
-            Self::Memory(this) => {
-                this.send_change_to(ovk, to);
-            },
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => {
-                this.send_change_to(ovk, to);
-            },
-        };
-
-        self
-    }
-
-    fn with_progress_notifier(
-        &mut self,
-        progress_notifier: Option<mpsc::Sender<Progress>>,
-    ) {
-        match self {
-            Self::Memory(this) => this.with_progress_notifier(progress_notifier),
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this.with_progress_notifier(progress_notifier),
-        }
-    }
-
-    async fn build(
-        mut self,
-        prover: &(impl TxProver + Send + Sync),
-        fee: u64,
-    ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
-        match self {
-            Self::Memory(this) => this
-                .build(prover, fee)
-                .await
-                .map_err(Into::into),
-            #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this
-                .build(prover, fee)
-                .await
-                .map_err(Into::into),
         }
     }
 }

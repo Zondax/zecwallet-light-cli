@@ -18,8 +18,12 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use super::data::{OrchardNoteData, OutgoingTxMetadata, SaplingNoteData, Utxo, WalletTx, WitnessCache};
 use crate::lightclient::config::MAX_REORG;
+use crate::lightwallet::data::notes::{OrchardNoteData, SaplingNoteData};
+use crate::lightwallet::data::outgoingtx::OutgoingTxMetadata;
+use crate::lightwallet::data::utxo::Utxo;
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::data::witnesscache::WitnessCache;
 
 /// List of all transactions in a wallet.
 /// Note that the parent is expected to hold a RwLock, so we will assume that

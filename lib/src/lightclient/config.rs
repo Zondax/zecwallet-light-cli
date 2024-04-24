@@ -94,8 +94,20 @@ pub struct LightClientConfig<PARAMS> {
 }
 
 impl<P: consensus::Parameters> LightClientConfig<P> {
-    // Create an unconnected (to any server) config to test for local wallet etc...
+    /// Create an unconnected (to any server) config to test for local wallet
+    /// etc... This function is deprecated and will be removed in future
+    /// versions. Use `new_unconnected` instead.
+    #[deprecated(since = "1.2.0", note = "Please use `new_unconnected` instead")]
     pub fn create_unconnected(
+        params: P,
+        dir: Option<String>,
+    ) -> LightClientConfig<P> {
+        Self::new_unconnected(params, dir)
+    }
+
+    /// Create an unconnected (to any server) config to test for local wallet
+    /// etc...
+    pub fn new_unconnected(
         params: P,
         dir: Option<String>,
     ) -> LightClientConfig<P> {
@@ -111,8 +123,21 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             params: params.clone(),
         }
     }
-
+    /// Create a new LightClientConfig with the specified parameters, connecting
+    /// to a server. This function is deprecated and will be removed in
+    /// future versions. Use `new` instead.
+    #[deprecated(since = "1.2.0", note = "Please use `new` instead")]
     pub fn create(
+        params: P,
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> io::Result<(LightClientConfig<P>, u64)> {
+        Self::new(params, server, data_dir)
+    }
+
+    /// Create a new LightClientConfig with the specified parameters, connecting
+    /// to a server.
+    pub fn new(
         params: P,
         server: http::Uri,
         data_dir: Option<String>,
@@ -157,7 +182,6 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             ));
         }
     }
-
     pub fn set_data_dir(
         &mut self,
         dir_str: String,

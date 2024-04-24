@@ -31,14 +31,12 @@ use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 use super::checkpoints;
 use super::config::{LightClientConfig, UnitTestNetwork};
 use crate::grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::grpc::CompactSaplingOutput;
-use crate::grpc::{CompactTx, Empty};
+use crate::grpc::{CompactSaplingOutput, CompactTx, Empty};
 use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
-use crate::lightclient::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
+use crate::lightclient::blaze::test_utils::{new_transactiondata, FakeCompactBlockList, FakeTransaction};
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
-use crate::lightclient::test_utils::new_transactiondata;
 use crate::lightclient::LightClient;
-use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::data::wallettx::WalletTx;
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -51,7 +49,7 @@ fn new_wallet_from_phrase() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(UnitTestNetwork, Some(data_dir));
+    let config = LightClientConfig::new_unconnected(UnitTestNetwork, Some(data_dir));
     let lc = LightClient::new_from_phrase(TEST_SEED.to_string(), &config, 0, false).unwrap();
 
     // The first t address and z address should be derived
@@ -86,7 +84,7 @@ fn new_wallet_from_sk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(UnitTestNetwork, Some(data_dir));
+    let config = LightClientConfig::new_unconnected(UnitTestNetwork, Some(data_dir));
     let sk = "secret-extended-key-main1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv940qeg706hd0wq6g5snzvhp332y6vhwyukdn8dhekmmsk7fzvzkqm6ypc99uy63tpesqwxhpre78v06cx8k5xpp9mrhtgqs5dvp68cqx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ec0twfrq";
     let lc = LightClient::new_from_phrase(sk.to_string(), &config, 0, false).unwrap();
     Runtime::new()
@@ -123,7 +121,7 @@ fn new_wallet_from_vk() {
         .unwrap()
         .to_string();
 
-    let config = LightClientConfig::create_unconnected(UnitTestNetwork, Some(data_dir));
+    let config = LightClientConfig::new_unconnected(UnitTestNetwork, Some(data_dir));
     let vk = "zxviews1qvpa0qr8qqqqpqxn4l054nzxpxzp3a8r2djc7sekdek5upce8mc2j2z0arzps4zv9kdvg28gjzvxd47ant6jn4svln5psw3htx93cq93ahw4e7lptrtlq7he5r6p6rcm3s0z6l24ype84sgqfrmghu449htrjspfv6qg2zfx2yrvthflmm2ynl8c0506dekul0f6jkcdmh0292lpphrksyc5z3pxwws97zd5els3l2mjt2s7hntap27mlmt6w0drtfmz36vz8pgu7ecrxzsls";
     let lc = LightClient::new_from_phrase(vk.to_string(), &config, 0, false).unwrap();
 
@@ -1005,7 +1003,7 @@ async fn t_incoming_t_outgoing() {
 
     let mut ftx = FakeTransaction::new();
     ftx.add_t_output(&pk, taddr.clone(), value);
-    let (tx, _) = fcbl.add_ftx(ftx);
+    let (tx, _) = fcbl.add_fake_tx(ftx);
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     // 3. Test the list
@@ -1212,7 +1210,7 @@ async fn mixed_txn() {
 
     let mut ftx = FakeTransaction::new();
     ftx.add_t_output(&pk, taddr.clone(), tvalue);
-    let (_ttx, _) = fcbl.add_ftx(ftx);
+    let (_ttx, _) = fcbl.add_fake_tx(ftx);
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     // 4. Send a tx to both external t-addr and external z addr and mine it
@@ -1333,7 +1331,7 @@ async fn aborted_resync() {
 
     let mut ftx = FakeTransaction::new();
     ftx.add_t_output(&pk, taddr.clone(), tvalue);
-    let (_ttx, _) = fcbl.add_ftx(ftx);
+    let (_ttx, _) = fcbl.add_fake_tx(ftx);
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     // 4. Send a tx to both external t-addr and external z addr and mine it
@@ -1480,7 +1478,7 @@ async fn no_change() {
 
     let mut ftx = FakeTransaction::new();
     ftx.add_t_output(&pk, taddr.clone(), tvalue);
-    let (_ttx, _) = fcbl.add_ftx(ftx);
+    let (_ttx, _) = fcbl.add_fake_tx(ftx);
     mine_pending_blocks(&mut fcbl, &data, &lc).await;
 
     // 4. Send a tx to both external t-addr and external z addr and mine it
@@ -1981,6 +1979,30 @@ async fn mempool_and_balance() {
     // Shutdown everything cleanly
     stop_tx.send(true).unwrap();
     h1.await.unwrap();
+
+    // #[test]
+    // fn test_light_client_sync() {
+    //     let zondax_seed = "'equip will roof matter pink blind book anxiety
+    // banner elbow sun young'".to_string();
+    //
+    //     let data_dir = Some("".to_string());
+    //
+    //     let server_uri =
+    // LightClientConfig::<MainNetwork>::get_server_or_default(Some(DEFAULT_SERVER.
+    // to_string()));
+    //
+    //     let (config, _) =
+    //         LightClientConfig::new(MainNetwork, server_uri,
+    // data_dir).expect("Failed to create LightClientConfig");
+    //
+    //     let birthday = 2_300_000;
+    //     let lc =
+    //         LightClient::new_from_phrase(zondax_seed, &config, birthday,
+    // true).expect("Failed to create LightClient");
+    //
+    //     lc.start_sync();
+    // }
+    // }
 }
 
 pub const EXT_TADDR: &str = "t1NoS6ZgaUTpmjkge2cVpXGcySasdYDrXqh";

@@ -149,7 +149,7 @@ pub mod tests {
         let lc = Runtime::new()
             .unwrap()
             .block_on(LightClient::test_new(
-                &LightClientConfig::create_unconnected(UnitTestNetwork, None),
+                &LightClientConfig::new_unconnected(UnitTestNetwork, None),
                 Some(TEST_SEED.to_string()),
                 0,
             ))

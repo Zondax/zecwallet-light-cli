@@ -8,8 +8,10 @@ use zcash_primitives::consensus;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
 use crate::grpc::TreeState;
-use crate::lightwallet::{WalletOptions, MERKLE_DEPTH};
-use crate::{lightclient::config::LightClientConfig, lightwallet::data::BlockData};
+use crate::lightclient::config::LightClientConfig;
+use crate::lightclient::MERKLE_DEPTH;
+use crate::lightwallet::data::blockdata::BlockData;
+use crate::lightwallet::options::WalletOptions;
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,

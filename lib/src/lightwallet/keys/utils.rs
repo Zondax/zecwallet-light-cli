@@ -1,16 +1,9 @@
-use std::io::{self, ErrorKind};
+use std::io;
+use std::io::ErrorKind;
 
 use base58::{FromBase58, ToBase58};
-use ripemd160::Digest;
+use hmac::digest::Digest;
 use sha2::Sha256;
-use zcash_primitives::{
-    consensus::BlockHeight,
-    sapling::PaymentAddress,
-    zip32::{ChildIndex, ExtendedSpendingKey},
-};
-
-mod txbuilder;
-pub use txbuilder::{Builder, SaplingMetadata, TxProver};
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
@@ -75,73 +68,3 @@ impl FromBase58Check for str {
         Ok((payload[0], payload[1 ..].to_vec()))
     }
 }
-
-// GAT workaround, see:
-// https://sabrinajewson.org/blog/the-better-alternative-to-lifetime-gats#the-better-gats
-mod sealed {
-    pub trait Sealed: Sized {}
-    pub struct Bounds<T>(T);
-    impl<T> Sealed for Bounds<T> {}
-}
-
-pub trait KeystoreBuilderLifetime<'this, ImplicitBounds: sealed::Sealed = sealed::Bounds<&'this Self>> {
-    type Builder: txbuilder::Builder;
-}
-
-#[async_trait::async_trait]
-pub trait Keystore
-where
-    Self: for<'this> KeystoreBuilderLifetime<'this>,
-{
-    type Error;
-
-    /// Retrieve the unshielded public key for a given path
-    async fn get_t_pubkey(
-        &self,
-        path: &[ChildIndex],
-    ) -> Result<secp256k1::PublicKey, Self::Error>;
-
-    /// Retrieve the shielded payment address for a given path
-    async fn get_z_payment_address(
-        &self,
-        path: &[ChildIndex],
-    ) -> Result<PaymentAddress, Self::Error>;
-
-    /// Retrieve an initialized builder for the current keystore
-    fn txbuilder(
-        &mut self,
-        target_height: BlockHeight,
-    ) -> Result<<Self as KeystoreBuilderLifetime<'_>>::Builder, Self::Error>;
-}
-
-#[async_trait::async_trait]
-pub trait InsecureKeystore {
-    type Error;
-
-    /// Retrieve bip39 seed phrase used in key generation
-    #[allow(dead_code)]
-    async fn get_seed_phrase(&self) -> Result<String, Self::Error>;
-
-    /// Retrieve the shielded spending key for a given path
-    async fn get_z_private_spending_key(
-        &self,
-        path: &[ChildIndex],
-    ) -> Result<ExtendedSpendingKey, Self::Error>;
-
-    /// Retrieve the unshielded secret key for a given path
-    async fn get_t_secret_key(
-        &self,
-        path: &[ChildIndex],
-    ) -> Result<secp256k1::SecretKey, Self::Error>;
-}
-
-mod in_memory;
-pub use in_memory::InMemoryKeys;
-
-#[cfg(feature = "ledger-support")]
-mod ledger;
-#[cfg(feature = "ledger-support")]
-pub use ledger::LedgerKeystore;
-
-mod adapters;
-pub use adapters::*;

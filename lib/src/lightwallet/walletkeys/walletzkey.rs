@@ -10,8 +10,8 @@ use zcash_primitives::{
     zip32::{ExtendedFullViewingKey, ExtendedSpendingKey},
 };
 
-use super::keys::InMemoryKeys;
 use crate::lightclient::config::LightClientConfig;
+use crate::lightwallet::keys::InMemoryKeys;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum WalletZKeyType {
@@ -23,14 +23,14 @@ pub enum WalletZKeyType {
 // A struct that holds z-address private keys or view keys
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalletZKey {
-    pub(super) keytype: WalletZKeyType,
+    pub(crate) keytype: WalletZKeyType,
     locked: bool,
-    pub(super) extsk: Option<ExtendedSpendingKey>,
-    pub(super) extfvk: ExtendedFullViewingKey,
-    pub(super) zaddress: PaymentAddress,
+    pub(crate) extsk: Option<ExtendedSpendingKey>,
+    pub(crate) extfvk: ExtendedFullViewingKey,
+    pub(crate) zaddress: PaymentAddress,
 
     // If this is an HD key, what is the key number
-    pub(super) hdkey_num: Option<u32>,
+    pub(crate) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
     enc_key: Option<Vec<u8>>,

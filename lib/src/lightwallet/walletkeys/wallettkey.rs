@@ -8,10 +8,8 @@ use sodiumoxide::crypto::secretbox;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::consensus;
 
-use super::{
-    keys::{FromBase58Check, ToBase58Check},
-    utils,
-};
+use crate::lightwallet::keys::utils::{FromBase58Check, ToBase58Check};
+use crate::lightwallet::utils::{read_string, write_string};
 use crate::{
     lightclient::config::LightClientConfig,
     lightwallet::extended_key::{ExtendedPrivKey, KeyIndex},
@@ -25,13 +23,13 @@ pub enum WalletTKeyType {
 
 #[derive(Debug, Clone)]
 pub struct WalletTKey {
-    pub(super) keytype: WalletTKeyType,
+    pub(crate) keytype: WalletTKeyType,
     locked: bool,
-    pub(super) key: Option<secp256k1::SecretKey>,
+    pub(crate) key: Option<secp256k1::SecretKey>,
     pub(crate) address: String,
 
     // If this is a HD key, what is the key number
-    pub(super) hdkey_num: Option<u32>,
+    pub(crate) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
     enc_key: Option<Vec<u8>>,
@@ -192,7 +190,7 @@ impl WalletTKey {
             r.read_exact(&mut tpk_bytes)?;
             secp256k1::SecretKey::from_slice(&tpk_bytes).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
         })?;
-        let address = utils::read_string(&mut inp)?;
+        let address = read_string(&mut inp)?;
 
         let hdkey_num = Optional::read(&mut inp, |r| r.read_u32::<LittleEndian>())?;
 
@@ -213,7 +211,7 @@ impl WalletTKey {
         out.write_u8(self.locked as u8)?;
 
         Optional::write(&mut out, self.key, |w, sk| w.write_all(&sk[..]))?;
-        utils::write_string(&mut out, &self.address)?;
+        write_string(&mut out, &self.address)?;
 
         Optional::write(&mut out, self.hdkey_num, |o, n| o.write_u32::<LittleEndian>(n))?;
 
@@ -258,7 +256,7 @@ impl WalletTKey {
                 let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
 
                 if address != self.address {
-                    return Err(io::Error::new(
+                    return Err(Error::new(
                         ErrorKind::InvalidData,
                         format!("address mismatch at {}. {:?} vs {:?}", self.hdkey_num.unwrap(), address, self.address),
                     ));
@@ -272,10 +270,7 @@ impl WalletTKey {
                 let sk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
                     Ok(s) => s,
                     Err(_) => {
-                        return Err(io::Error::new(
-                            ErrorKind::InvalidData,
-                            "Decryption failed. Is your password correct?",
-                        ));
+                        return Err(Error::new(ErrorKind::InvalidData, "Decryption failed. Is your password correct?"));
                     },
                 };
 
@@ -344,7 +339,7 @@ mod test {
 
     #[test]
     fn tkey_encode_decode() {
-        let config = LightClientConfig::create_unconnected(UnitTestNetwork, None);
+        let config = LightClientConfig::new_unconnected(UnitTestNetwork, None);
 
         for _i in 0 .. 10 {
             let mut b = [0u8; 32];

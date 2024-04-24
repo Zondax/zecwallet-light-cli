@@ -14,7 +14,7 @@ use zcash_primitives::{
 };
 
 use crate::grpc::RawTransaction;
-use crate::lightwallet::keys::Keystores;
+use crate::lightwallet::keys::keystores::Keystores;
 
 pub struct FetchTaddrTxns<P> {
     keys: Arc<RwLock<Keystores<P>>>,
@@ -164,10 +164,10 @@ mod test {
 
     use super::FetchTaddrTxns;
     use crate::grpc::RawTransaction;
+    use crate::lightclient::blaze;
     use crate::lightclient::config::UnitTestNetwork;
-    use crate::lightclient::test_utils;
     use crate::lightwallet::keys::InMemoryKeys;
-    use crate::lightwallet::wallettkey::WalletTKey;
+    use crate::lightwallet::walletkeys::wallettkey::WalletTKey;
 
     #[tokio::test]
     async fn out_of_order_txns() {
@@ -215,7 +215,7 @@ mod test {
                             rtx.height = h;
 
                             let mut b = vec![];
-                            test_utils::new_transactiondata()
+                            blaze::test_utils::new_transactiondata()
                                 .freeze()
                                 .unwrap()
                                 .write(&mut b)

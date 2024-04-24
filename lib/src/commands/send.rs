@@ -4,7 +4,7 @@ use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 
 use crate::commands::Command;
 use crate::lightclient::LightClient;
-use crate::lightwallet::keys::Keystores;
+use crate::lightwallet::keys::keystores::Keystores;
 use crate::RT;
 
 pub struct SendCommand {}

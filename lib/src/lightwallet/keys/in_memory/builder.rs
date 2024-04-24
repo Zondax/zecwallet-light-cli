@@ -19,8 +19,8 @@ use zcash_primitives::{
 
 use crate::lightwallet::{
     keys::{
+        builders::{SaplingMetadata, TxProver},
         in_memory::InMemoryKeys,
-        txbuilder::{SaplingMetadata, TxProver},
         Builder,
     },
     utils::compute_taddr,

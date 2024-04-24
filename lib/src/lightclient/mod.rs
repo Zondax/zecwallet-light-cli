@@ -36,18 +36,15 @@ use crate::lightclient::blaze::block_witness_data::BlockAndWitnessData;
 use crate::lightclient::blaze::fetch_compact_blocks::FetchCompactBlocks;
 use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
 use crate::lightclient::blaze::fetch_taddr_txns::FetchTaddrTxns;
+use crate::lightclient::blaze::sync_data::BlazeSyncData;
 use crate::lightclient::blaze::sync_status::SyncStatus;
-use crate::lightclient::blaze::syncdata::BlazeSyncData;
 use crate::lightclient::blaze::trial_decryptions::TrialDecryptions;
 use crate::lightclient::blaze::update_notes::UpdateNotes;
-use crate::{
-    grpc::GrpcConnector,
-    grpc::RawTransaction,
-    lightclient::config::MAX_REORG,
-    lightwallet::{
-        data::WalletTx, keys::KeystoresKind, message::Message, now, LightWallet, MAX_CHECKPOINTS, MERKLE_DEPTH,
-    },
-};
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::keys::keystores::KeystoresKind;
+use crate::lightwallet::lightwallet::LightWallet;
+use crate::lightwallet::utils::now;
+use crate::{grpc::GrpcConnector, grpc::RawTransaction, lightclient::config::MAX_REORG, lightwallet::message::Message};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
@@ -1678,8 +1675,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     /// Start syncing in batches with the max size, so we don't consume memory
-    /// more than
-    // wha twe can handle.
+    /// more than can be handled
     async fn start_sync(&self) -> Result<JsonValue, String> {
         // We can only do one sync at a time because we sync blocks in serial order
         // If we allow multiple syncs, they'll all get jumbled up.
@@ -2149,11 +2145,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 }
 
 #[cfg(test)]
-pub mod tests;
-
-#[cfg(test)]
 pub(crate) mod test_server;
 
 pub mod blaze;
 #[cfg(test)]
-pub(crate) mod test_utils;
+mod tests;
+
+pub const MERKLE_DEPTH: u8 = 32;
+pub const MAX_CHECKPOINTS: usize = 100;

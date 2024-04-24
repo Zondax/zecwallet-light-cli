@@ -3,7 +3,7 @@ use zcash_primitives::consensus;
 
 use crate::commands::Command;
 use crate::lightclient::LightClient;
-use crate::lightwallet::MemoDownloadOption;
+use crate::lightwallet::options::MemoDownloadOption;
 use crate::RT;
 
 pub struct SetOptionCommand {}

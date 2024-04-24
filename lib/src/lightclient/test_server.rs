@@ -29,8 +29,8 @@ use crate::grpc::{
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
 use crate::lightclient::blaze::test_utils::{orchardtree_to_string, tree_to_string, FakeCompactBlockList};
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::now;
+use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::utils::now;
 
 pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static>(
     params: P
@@ -52,7 +52,7 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
         .parse()
         .expect("Failed to parse server port");
 
-    let mut config = LightClientConfig::create_unconnected(params, None);
+    let mut config = LightClientConfig::new_unconnected(params, None);
     config.server = uri
         .parse()
         .expect("Failed to parse URI");

@@ -1,4 +1,5 @@
 use std::io::{self, Read, Write};
+use std::time::SystemTime;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use ripemd160::{Digest, Ripemd160};
@@ -6,7 +7,7 @@ use secp256k1::PublicKey;
 use sha2::Sha256;
 use zcash_primitives::memo::MemoBytes;
 
-use crate::lightwallet::keys::ToBase58Check;
+use crate::lightwallet::keys::utils::ToBase58Check;
 
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
     // Strings are written as <little endian> len + bytes
@@ -58,4 +59,11 @@ pub fn compute_taddr(
     hasher
         .finalize()
         .to_base58check(version, suffix)
+}
+
+pub fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
