@@ -33,7 +33,7 @@ use zcash_primitives::{
 use zcash_proofs::sapling::SaplingProvingContext;
 
 use crate::{
-    compact_formats::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx},
+    compacting::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx},
     lightclient::{
         faketx::{clone_transactiondata, new_transactiondata},
         test_server::TestServerData,

@@ -1,9 +1,9 @@
-mod default_fee;
 mod address;
 mod balance;
 mod clear;
 mod decrypt;
 mod decrypt_message;
+mod default_fee;
 mod encrypt;
 mod encrypt_message;
 mod encryption_status;
@@ -31,8 +31,10 @@ mod transactions;
 mod unlock;
 mod zecprice;
 
-use zcash_primitives::consensus;
 use std::collections::HashMap;
+
+use zcash_primitives::consensus;
+
 use crate::commands::address::AddressCommand;
 use crate::commands::balance::BalanceCommand;
 use crate::commands::clear::ClearCommand;
@@ -132,11 +134,11 @@ pub fn do_user_command<P: consensus::Parameters + Send + Sync + 'static>(
 pub mod tests {
     use lazy_static::lazy_static;
     use tokio::runtime::Runtime;
-    use crate::commands::do_user_command;
 
+    use crate::commands::do_user_command;
     use crate::lightclient::{
-        LightClient,
         lightclient_config::{LightClientConfig, UnitTestNetwork},
+        LightClient,
     };
 
     lazy_static! {

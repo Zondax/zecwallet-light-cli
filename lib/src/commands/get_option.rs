@@ -1,9 +1,10 @@
-use zcash_primitives::consensus;
 use json::object;
+use zcash_primitives::consensus;
+
 use crate::commands::Command;
 use crate::lightclient::LightClient;
-use crate::RT;
 use crate::lightwallet::MemoDownloadOption;
+use crate::RT;
 
 pub struct GetOptionCommand {}
 

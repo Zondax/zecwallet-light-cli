@@ -1,5 +1,6 @@
 use zcash_primitives::consensus;
-use crate::commands::{Command, get_commands};
+
+use crate::commands::{get_commands, Command};
 use crate::lightclient::LightClient;
 
 pub struct HelpCommand {}

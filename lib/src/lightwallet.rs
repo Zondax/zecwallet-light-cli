@@ -53,12 +53,12 @@ use self::{
     message::Message,
     wallet_txns::WalletTxns,
 };
-use crate::compact_formats::TreeState;
+use crate::compacting::TreeState;
+use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::keys::{InMemoryKeys, Keystores};
 use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
-    blaze::fetch_full_tx::FetchFullTxns,
     lightclient::lightclient_config::LightClientConfig,
     lightwallet::{
         data::SpendableSaplingNote,

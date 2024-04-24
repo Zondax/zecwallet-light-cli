@@ -17,8 +17,8 @@ use tonic::{
 use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::transaction::{Transaction, TxId};
 
-use crate::compact_formats::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::compact_formats::{
+use crate::compacting::compact_tx_streamer_client::CompactTxStreamerClient;
+use crate::compacting::{
     BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
     TransparentAddressBlockFilter, TreeState, TxFilter,
 };

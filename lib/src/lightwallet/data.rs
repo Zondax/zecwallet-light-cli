@@ -22,8 +22,8 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
-use crate::compact_formats::CompactBlock;
+use crate::compacting::CompactBlock;
+use crate::lightclient::blaze::fixed_size_buffer::FixedSizeBuffer;
 
 #[derive(Clone)]
 pub struct BlockData {

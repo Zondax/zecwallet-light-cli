@@ -22,9 +22,9 @@ use zcash_primitives::{
 };
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
-use crate::compact_formats::vec_to_array;
+use crate::helpers::vec_to_array;
 use crate::{
-    compact_formats::{CompactBlock, CompactTx, TreeState},
+    compacting::{CompactBlock, CompactTx, TreeState},
     grpc_connector::GrpcConnector,
     lightclient::{
         checkpoints::get_all_main_checkpoints,
@@ -874,14 +874,11 @@ mod test {
     use zcash_primitives::block::BlockHash;
 
     use super::BlockAndWitnessData;
-    use crate::blaze::sync_status::SyncStatus;
+    use crate::lightclient::blaze::sync_status::SyncStatus;
+    use crate::lightclient::blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList};
     use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::lightwallet::wallet_txns::WalletTxns;
-    use crate::{
-        blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList},
-        lightclient::lightclient_config::LightClientConfig,
-        lightwallet::data::BlockData,
-    };
+    use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
 
     #[tokio::test]
     async fn setup_finish_simple() {

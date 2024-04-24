@@ -1,6 +1,7 @@
+use json::object;
 use zcash_primitives::consensus;
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use json::object;
+
 use crate::commands::Command;
 use crate::lightclient::LightClient;
 use crate::lightwallet::keys::Keystores;

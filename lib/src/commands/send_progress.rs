@@ -1,4 +1,5 @@
 use zcash_primitives::consensus;
+
 use crate::commands::Command;
 use crate::lightclient::LightClient;
 use crate::RT;

@@ -1,12 +1,12 @@
 #[macro_use]
 extern crate rust_embed;
 
-pub mod blaze;
-pub mod compact_formats;
+mod commands;
+pub mod compacting;
 pub mod grpc_connector;
+mod helpers;
 pub mod lightclient;
 pub mod lightwallet;
-mod commands;
 
 pub use commands::do_user_command;
 
@@ -19,10 +19,9 @@ pub struct SaplingParams;
 #[folder = "pubkey/"]
 pub struct ServerCert;
 
-pub use zcash_primitives::consensus::{MainNetwork, Parameters};
-
 use lazy_static::lazy_static;
 use tokio::runtime::Runtime;
+pub use zcash_primitives::consensus::{MainNetwork, Parameters};
 
 lazy_static! {
     static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();

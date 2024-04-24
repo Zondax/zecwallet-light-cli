@@ -13,7 +13,7 @@ use zcash_primitives::{
     transaction::Transaction,
 };
 
-use crate::compact_formats::RawTransaction;
+use crate::compacting::RawTransaction;
 use crate::lightwallet::keys::Keystores;
 
 pub struct FetchTaddrTxns<P> {
@@ -116,7 +116,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
                 let mut prev_height = 0;
 
                 while let Some(rtx) = ordered_rtx_rx.recv().await {
-                    // We should be reciving transactions strictly in height order, so make sure
+                    // We should be receiving transactions strictly in height order, so make sure
                     if rtx.height < prev_height {
                         return Err(format!(
                             "Wrong height order while processing transparent transactions!. Was {}, prev={}",
@@ -163,7 +163,7 @@ mod test {
     use zcash_primitives::transaction::Transaction;
 
     use super::FetchTaddrTxns;
-    use crate::compact_formats::RawTransaction;
+    use crate::compacting::RawTransaction;
     use crate::lightclient::faketx;
     use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::lightwallet::keys::InMemoryKeys;

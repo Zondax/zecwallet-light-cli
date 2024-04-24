@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::convert::TryInto;
 
 use ff::PrimeField;
@@ -10,6 +9,8 @@ use zcash_primitives::{
     consensus::{BlockHeight, Parameters},
     sapling::note_encryption::SaplingDomain,
 };
+
+use crate::helpers::vec_to_array;
 
 tonic::include_proto!("cash.z.wallet.sdk.rpc");
 
@@ -118,10 +119,6 @@ impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactSaplin
     fn enc_ciphertext(&self) -> &[u8; 52] {
         vec_to_array(&self.ciphertext)
     }
-}
-
-pub fn vec_to_array<'a, T, const N: usize>(vec: &'a Vec<T>) -> &'a [T; N] {
-    <&[T; N]>::try_from(&vec[..]).unwrap()
 }
 
 impl ShieldedOutput<OrchardDomain, 52_usize> for CompactOrchardAction {

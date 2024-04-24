@@ -1,5 +1,7 @@
-use zcash_primitives::consensus;
 use std::convert::TryInto;
+
+use zcash_primitives::consensus;
+
 use crate::commands::Command;
 use crate::lightclient::LightClient;
 use crate::lightwallet::utils;

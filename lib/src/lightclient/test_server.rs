@@ -23,9 +23,9 @@ use zcash_primitives::transaction::{Transaction, TxId};
 use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;
 use crate::blaze::test_utils::{orchardtree_to_string, tree_to_string, FakeCompactBlockList};
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
-use crate::compact_formats::{
+use crate::compacting::compact_tx_streamer_server::CompactTxStreamer;
+use crate::compacting::compact_tx_streamer_server::CompactTxStreamerServer;
+use crate::compacting::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
@@ -49,10 +49,14 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
     let port = portpicker::pick_unused_port().expect("Failed to pick an unused port");
     let server_port = format!("127.0.0.1:{}", port);
     let uri = format!("http://{}", server_port);
-    let addr = server_port.parse().expect("Failed to parse server port");
+    let addr = server_port
+        .parse()
+        .expect("Failed to parse server port");
 
     let mut config = LightClientConfig::create_unconnected(params, None);
-    config.server = uri.parse().expect("Failed to parse URI");
+    config.server = uri
+        .parse()
+        .expect("Failed to parse URI");
 
     let (service, data) = TestGRPCService::new(config.clone());
 
@@ -72,7 +76,9 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
             )
             .expect("Failed to send data directory");
 
-        ready_tx.send(true).expect("Failed to send ready signal");
+        ready_tx
+            .send(true)
+            .expect("Failed to send ready signal");
 
         // Create a new service
         let svc = CompactTxStreamerServer::new(service);
@@ -87,7 +93,9 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
         println!("Server stopped");
     });
 
-    let data_dir = data_dir_rx.await.expect("Failed to receive data directory");
+    let data_dir = data_dir_rx
+        .await
+        .expect("Failed to receive data directory");
     println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);
     config.data_dir = Some(data_dir);
 
@@ -107,7 +115,9 @@ pub async fn mine_random_blocks<P: consensus::Parameters + Send + Sync + 'static
     data.write()
         .await
         .add_blocks(cbs.clone());
-    lc.do_sync(true).await.expect("Failed to sync");
+    lc.do_sync(true)
+        .await
+        .expect("Failed to sync");
 }
 
 pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'static>(
@@ -153,7 +163,9 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
 
     data.write().await.add_txns(v);
 
-    lc.do_sync(true).await.expect("Failed to sync");
+    lc.do_sync(true)
+        .await
+        .expect("Failed to sync");
 }
 
 #[derive(Debug)]
@@ -187,7 +199,8 @@ impl<P: consensus::Parameters> TestServerData<P> {
         for (tx, height, taddrs) in txns {
             let mut rtx = RawTransaction::default();
             let mut data = vec![];
-            tx.write(&mut data).expect("Failed to write transaction");
+            tx.write(&mut data)
+                .expect("Failed to write transaction");
             rtx.data = data;
             rtx.height = height;
             self.txns
@@ -619,7 +632,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
 
     async fn get_mempool_stream(
         &self,
-        _request: tonic::Request<crate::compact_formats::Empty>,
+        _request: tonic::Request<crate::compacting::Empty>,
     ) -> Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status> {
         todo!()
     }

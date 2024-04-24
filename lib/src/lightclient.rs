@@ -8,6 +8,8 @@ use std::{
     time::Duration,
 };
 
+use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use futures::{stream::FuturesUnordered, StreamExt};
 use incrementalmerkletree::bridgetree::BridgeTree;
 use json::{array, object, JsonValue};
@@ -30,13 +32,16 @@ use zcash_primitives::{
 };
 
 use self::lightclient_config::LightClientConfig;
+use crate::lightclient::blaze::block_witness_data::BlockAndWitnessData;
+use crate::lightclient::blaze::fetch_compact_blocks::FetchCompactBlocks;
+use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
+use crate::lightclient::blaze::fetch_taddr_txns::FetchTaddrTxns;
+use crate::lightclient::blaze::sync_status::SyncStatus;
+use crate::lightclient::blaze::syncdata::BlazeSyncData;
+use crate::lightclient::blaze::trial_decryptions::TrialDecryptions;
+use crate::lightclient::blaze::update_notes::UpdateNotes;
 use crate::{
-    blaze::{
-        block_witness_data::BlockAndWitnessData, fetch_compact_blocks::FetchCompactBlocks,
-        fetch_full_tx::FetchFullTxns, fetch_taddr_txns::FetchTaddrTxns, sync_status::SyncStatus,
-        syncdata::BlazeSyncData, trial_decryptions::TrialDecryptions, update_notes::UpdateNotes,
-    },
-    compact_formats::RawTransaction,
+    compacting::RawTransaction,
     grpc_connector::GrpcConnector,
     lightclient::lightclient_config::MAX_REORG,
     lightwallet::{
@@ -1031,7 +1036,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         match Message::new(to, memo).encrypt() {
             Ok(v) => {
-                object! {"encrypted_base64" => base64::encode(v) }
+                object! {"encrypted_base64" => BASE64_STANDARD.encode(v) }
             },
             Err(e) => {
                 object! {"error" => format!("Couldn't encrypt. Error was {}", e)}
@@ -1043,7 +1048,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         &self,
         enc_base64: String,
     ) -> JsonValue {
-        let data = match base64::decode(enc_base64) {
+        let data = match BASE64_STANDARD.decode(enc_base64) {
             Ok(v) => v,
             Err(e) => return object! {"error" => format!("Couldn't decode base64. Error was {}", e)},
         };
@@ -2128,7 +2133,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let prover = crate::blaze::test_utils::FakeTxProver {};
+            let prover = test_utils::FakeTxProver {};
 
             self.wallet
                 .send_to_address(prover, false, addrs, |txbytes| {
@@ -2147,5 +2152,6 @@ pub mod tests;
 #[cfg(test)]
 pub(crate) mod test_server;
 
+pub mod blaze;
 #[cfg(test)]
 pub(crate) mod faketx;

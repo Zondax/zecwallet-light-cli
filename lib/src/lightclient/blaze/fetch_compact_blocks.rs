@@ -5,7 +5,7 @@ use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use zcash_primitives::consensus;
 
 use crate::{
-    compact_formats::CompactBlock, grpc_connector::GrpcConnector, lightclient::lightclient_config::LightClientConfig,
+    compacting::CompactBlock, grpc_connector::GrpcConnector, lightclient::lightclient_config::LightClientConfig,
 };
 
 pub struct FetchCompactBlocks<P> {

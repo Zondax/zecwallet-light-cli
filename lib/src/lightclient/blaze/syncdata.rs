@@ -7,7 +7,7 @@ use tokio::sync::RwLock;
 use zcash_primitives::consensus;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
-use crate::compact_formats::TreeState;
+use crate::compacting::TreeState;
 use crate::lightwallet::{WalletOptions, MERKLE_DEPTH};
 use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
 
