@@ -4,7 +4,7 @@ use std::{
 };
 
 use byteorder::ReadBytesExt;
-use bytes::{Buf, Bytes, IntoBuf};
+use bytes::{Buf, Bytes};
 use ff::Field;
 use group::GroupEncoding;
 use jubjub::ExtendedPoint;
@@ -133,11 +133,13 @@ impl Message {
         data: &[u8],
         ivk: &SaplingIvk,
     ) -> io::Result<Message> {
+        let data = data.to_vec();
+
         if data.len() != 1 + Message::magic_word().len() + 32 + 32 + ENC_CIPHERTEXT_SIZE {
             return Err(io::Error::new(ErrorKind::InvalidData, "Incorrect encrypted payload size".to_string()));
         }
 
-        let mut reader = Bytes::from(data).into_buf().reader();
+        let mut reader = Bytes::from(data).reader();
         let mut magic_word_bytes = vec![0u8; Message::magic_word().len()];
         reader.read_exact(&mut magic_word_bytes)?;
         let read_magic_word = String::from_utf8(magic_word_bytes)

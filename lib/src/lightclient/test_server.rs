@@ -44,24 +44,20 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
 ) {
     let (ready_tx, ready_rx) = oneshot::channel();
     let (stop_tx, stop_rx) = oneshot::channel();
+    let (data_dir_tx, data_dir_rx) = oneshot::channel();
 
-    let port = portpicker::pick_unused_port().unwrap();
+    let port = portpicker::pick_unused_port().expect("Failed to pick an unused port");
     let server_port = format!("127.0.0.1:{}", port);
     let uri = format!("http://{}", server_port);
-    let addr = server_port.parse().unwrap();
+    let addr = server_port.parse().expect("Failed to parse server port");
 
     let mut config = LightClientConfig::create_unconnected(params, None);
-    config.server = uri.parse().unwrap();
+    config.server = uri.parse().expect("Failed to parse URI");
 
     let (service, data) = TestGRPCService::new(config.clone());
 
-    let (data_dir_tx, data_dir_rx) = oneshot::channel();
-
-    let h1 = tokio::spawn(async move {
-        let svc = CompactTxStreamerServer::new(service);
-
-        // We create the temp dir here, so that we can clean it up after the test runs
-        let temp_dir = TempDir::new(&format!("test{}", port).as_str()).unwrap();
+    let server_handle = tokio::spawn(async move {
+        let temp_dir = TempDir::new(&format!("test{}", port)).expect("Failed to create a temporary directory");
 
         // Send the path name. Do into_path() to preserve the temp directory
         data_dir_tx
@@ -69,28 +65,33 @@ pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static
                 temp_dir
                     .into_path()
                     .canonicalize()
-                    .unwrap()
+                    .expect("Failed to canonicalize path")
                     .to_str()
-                    .unwrap()
+                    .expect("Failed to convert path to string")
                     .to_string(),
             )
-            .unwrap();
+            .expect("Failed to send data directory");
 
-        ready_tx.send(true).unwrap();
+        ready_tx.send(true).expect("Failed to send ready signal");
+
+        // Create a new service
+        let svc = CompactTxStreamerServer::new(service);
+
+        // Start
         Server::builder()
             .add_service(svc)
             .serve_with_shutdown(addr, stop_rx.map(drop))
             .await
-            .unwrap();
+            .expect("Server failed to run");
 
         println!("Server stopped");
     });
 
-    let data_dir = data_dir_rx.await.unwrap();
+    let data_dir = data_dir_rx.await.expect("Failed to receive data directory");
     println!("GRPC Server listening on: {}. With datadir {}", addr, data_dir);
     config.data_dir = Some(data_dir);
 
-    (data, config, ready_rx, stop_tx, h1)
+    (data, config, ready_rx, stop_tx, server_handle)
 }
 
 pub async fn mine_random_blocks<P: consensus::Parameters + Send + Sync + 'static>(
@@ -106,7 +107,7 @@ pub async fn mine_random_blocks<P: consensus::Parameters + Send + Sync + 'static
     data.write()
         .await
         .add_blocks(cbs.clone());
-    lc.do_sync(true).await.unwrap();
+    lc.do_sync(true).await.expect("Failed to sync");
 }
 
 pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'static>(
@@ -152,7 +153,7 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
 
     data.write().await.add_txns(v);
 
-    lc.do_sync(true).await.unwrap();
+    lc.do_sync(true).await.expect("Failed to sync");
 }
 
 #[derive(Debug)]
@@ -186,7 +187,7 @@ impl<P: consensus::Parameters> TestServerData<P> {
         for (tx, height, taddrs) in txns {
             let mut rtx = RawTransaction::default();
             let mut data = vec![];
-            tx.write(&mut data).unwrap();
+            tx.write(&mut data).expect("Failed to write transaction");
             rtx.data = data;
             rtx.height = height;
             self.txns
@@ -235,10 +236,10 @@ pub struct TestGRPCService<P> {
 
 impl<P: consensus::Parameters> TestGRPCService<P> {
     pub fn new(config: LightClientConfig<P>) -> (Self, Arc<RwLock<TestServerData<P>>>) {
-        let data = Arc::new(RwLock::new(TestServerData::new(config)));
-        let s = Self { data: data.clone() };
+        let test_server_data = Arc::new(RwLock::new(TestServerData::new(config)));
+        let test_grpc_service = Self { data: test_server_data.clone() };
 
-        (s, data)
+        (test_grpc_service, test_server_data)
     }
 
     async fn wait_random() {
