@@ -54,7 +54,7 @@ pub fn compute_taddr(
     suffix: &[u8],
 ) -> String {
     let mut hasher = Ripemd160::new();
-    hasher.update(Sha256::digest(&key.serialize().to_vec()));
+    hasher.update(Sha256::digest(key.serialize().as_ref()));
 
     hasher
         .finalize()

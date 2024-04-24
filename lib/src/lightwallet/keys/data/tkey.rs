@@ -8,12 +8,10 @@ use sodiumoxide::crypto::secretbox;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::consensus;
 
+use crate::lightclient::config::LightClientConfig;
+use crate::lightwallet::keys::extended_key::{ExtendedPrivKey, KeyIndex};
 use crate::lightwallet::keys::utils::{FromBase58Check, ToBase58Check};
 use crate::lightwallet::utils::{read_string, write_string};
-use crate::{
-    lightclient::config::LightClientConfig,
-    lightwallet::extended_key::{ExtendedPrivKey, KeyIndex},
-};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum WalletTKeyType {
@@ -37,6 +35,9 @@ pub struct WalletTKey {
 }
 
 impl WalletTKey {
+    fn serialized_version() -> u8 {
+        1
+    }
     pub fn get_taddr_from_bip39seed<P: consensus::Parameters + 'static>(
         config: &LightClientConfig<P>,
         bip39_seed: &[u8],
@@ -64,11 +65,11 @@ impl WalletTKey {
         sk: &secp256k1::SecretKey,
     ) -> String {
         let secp = secp256k1::Secp256k1::new();
-        let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
+        let pk = secp256k1::PublicKey::from_secret_key(&secp, sk);
 
         // Encode into t address
         let mut hash160 = ripemd160::Ripemd160::new();
-        hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
+        hash160.update(Sha256::digest(&pk.serialize()[..]));
 
         hash160
             .finalize()
@@ -82,7 +83,7 @@ impl WalletTKey {
     ) -> Self {
         WalletTKey {
             keytype: WalletTKeyType::HdKey,
-            key: Some(sk.clone()),
+            key: Some(*sk),
             address: taddr.clone(),
             hdkey_num: Some(num),
             locked: false,
@@ -169,10 +170,6 @@ impl WalletTKey {
         Ok(secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), &self.key.unwrap()))
     }
 
-    fn serialized_version() -> u8 {
-        return 1;
-    }
-
     pub fn read<R: Read>(mut inp: R) -> io::Result<Self> {
         let version = inp.read_u8()?;
         assert!(version <= Self::serialized_version());
@@ -206,7 +203,7 @@ impl WalletTKey {
     ) -> io::Result<()> {
         out.write_u8(Self::serialized_version())?;
 
-        out.write_u32::<LittleEndian>(self.keytype.clone() as u32)?;
+        out.write_u32::<LittleEndian>(self.keytype as u32)?;
 
         out.write_u8(self.locked as u8)?;
 
@@ -252,7 +249,7 @@ impl WalletTKey {
     ) -> io::Result<()> {
         match self.keytype {
             WalletTKeyType::HdKey => {
-                let sk = Self::get_taddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
+                let sk = Self::get_taddr_from_bip39seed(config, bip39_seed, self.hdkey_num.unwrap());
                 let address = Self::address_from_prefix_sk(&config.base58_pubkey_address(), &sk);
 
                 if address != self.address {
@@ -266,8 +263,8 @@ impl WalletTKey {
             },
             WalletTKeyType::ImportedKey => {
                 // For imported keys, we need to decrypt from the encrypted key
-                let nonce = secretbox::Nonce::from_slice(&self.nonce.as_ref().unwrap()).unwrap();
-                let sk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
+                let nonce = secretbox::Nonce::from_slice(self.nonce.as_ref().unwrap()).unwrap();
+                let sk_bytes = match secretbox::open(self.enc_key.as_ref().unwrap(), &nonce, key) {
                     Ok(s) => s,
                     Err(_) => {
                         return Err(Error::new(ErrorKind::InvalidData, "Decryption failed. Is your password correct?"));
@@ -299,7 +296,7 @@ impl WalletTKey {
 
                 let sk_bytes = &self.key.as_ref().unwrap()[..];
 
-                self.enc_key = Some(secretbox::seal(&sk_bytes, &nonce, &key));
+                self.enc_key = Some(secretbox::seal(sk_bytes, &nonce, key));
                 self.nonce = Some(nonce.as_ref().to_vec());
             },
         }

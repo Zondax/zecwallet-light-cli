@@ -12,9 +12,9 @@ use zcash_primitives::sapling::Nullifier;
 use zcash_primitives::transaction::TxId;
 
 use super::sync_data::BlazeSyncData;
+use crate::lightwallet::data::options::MemoDownloadOption;
 use crate::lightwallet::data::wallettx::WalletTx;
-use crate::lightwallet::options::MemoDownloadOption;
-use crate::lightwallet::wallet_txns::WalletTxns;
+use crate::lightwallet::data::wallettxs::WalletTxs;
 
 /// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.
@@ -26,17 +26,17 @@ use crate::lightwallet::wallet_txns::WalletTxns;
 /// If No, then:
 ///    - Update the witness for this note
 pub struct UpdateNotes {
-    wallet_txns: Arc<RwLock<WalletTxns>>,
+    wallet_txns: Arc<RwLock<WalletTxs>>,
 }
 
 impl UpdateNotes {
-    pub fn new(wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+    pub fn new(wallet_txns: Arc<RwLock<WalletTxs>>) -> Self {
         Self { wallet_txns }
     }
 
     async fn update_witnesses(
         bsync_data: Arc<RwLock<BlazeSyncData>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         txid: TxId,
         nullifier: Nullifier,
         output_num: Option<u32>,
@@ -48,7 +48,7 @@ impl UpdateNotes {
             .get_note_witness(&txid, &nullifier);
 
         if let Some((witnesses, created_height)) = wtn {
-            if witnesses.len() == 0 {
+            if witnesses.is_empty() {
                 // No witnesses, likely a Viewkey or we don't have spending key, so don't bother
                 return;
             }
@@ -220,6 +220,6 @@ impl UpdateNotes {
             r1.map_err(|e| format!("{}", e))
         });
 
-        return (h, blocks_done_tx, tx);
+        (h, blocks_done_tx, tx)
     }
 }

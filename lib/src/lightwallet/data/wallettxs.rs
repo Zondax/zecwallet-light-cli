@@ -29,14 +29,14 @@ use crate::lightwallet::data::witnesscache::WitnessCache;
 /// Note that the parent is expected to hold a RwLock, so we will assume that
 /// all accesses to this struct are threadsafe/locked properly.
 #[derive(Default)]
-pub struct WalletTxns {
+pub struct WalletTxs {
     pub(crate) current: HashMap<TxId, WalletTx>,
     pub(crate) last_txid: Option<TxId>,
 }
 
-impl WalletTxns {
+impl WalletTxs {
     pub fn serialized_version() -> u64 {
-        return 21;
+        21
     }
 
     pub fn new() -> Self {
@@ -83,7 +83,7 @@ impl WalletTxns {
                 None,
                 |c: Option<(TxId, BlockHeight)>, w| {
                     if c.is_none() || w.block > c.unwrap().1 {
-                        Some((w.txid.clone(), w.block))
+                        Some((w.txid, w.block))
                     } else {
                         c
                     }
@@ -158,7 +158,7 @@ impl WalletTxns {
         txids_to_remove: Vec<TxId>,
     ) {
         for txid in &txids_to_remove {
-            self.current.remove(&txid);
+            self.current.remove(txid);
         }
 
         // We also need to update any sapling note data and utxos in existing
@@ -206,7 +206,7 @@ impl WalletTxns {
         let txids_to_remove = self
             .current
             .values()
-            .filter_map(|wtx| if wtx.block >= reorg_height { Some(wtx.txid.clone()) } else { None })
+            .filter_map(|wtx| if wtx.block >= reorg_height { Some(wtx.txid) } else { None })
             .collect::<Vec<_>>();
         self.remove_txids(txids_to_remove);
 
@@ -220,8 +220,7 @@ impl WalletTxns {
                     // The latest witness is at the last() position, so just pop() it.
                     // We should be checking if there is a witness at all, but if there is none, it
                     // is an empty vector, for which pop() is a no-op.
-                    let _discard = nd
-                        .witnesses
+                    nd.witnesses
                         .pop(u64::from(reorg_height));
                 }
             }
@@ -248,10 +247,10 @@ impl WalletTxns {
                     .filter_map(move |snd| {
                         if wtx.block <= before_block
                             && snd.have_spending_key
-                            && snd.witnesses.len() > 0
+                            && !snd.witnesses.is_empty()
                             && snd.spent.is_none()
                         {
-                            Some((txid.clone(), snd.nullifier.clone()))
+                            Some((*txid, snd.nullifier))
                         } else {
                             None
                         }
@@ -265,7 +264,7 @@ impl WalletTxns {
         txid: &TxId,
     ) -> u64 {
         self.current
-            .get(&txid)
+            .get(txid)
             .map(|t| t.total_funds_spent())
             .unwrap_or(0)
     }
@@ -277,7 +276,7 @@ impl WalletTxns {
                 wtx.s_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.nullifier.clone(), nd.note.value, wtx.txid.clone()))
+                    .map(move |nd| (nd.nullifier, nd.note.value, wtx.txid))
             })
             .collect()
     }
@@ -289,7 +288,7 @@ impl WalletTxns {
                 wtx.o_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.note.nullifier(&nd.fvk), nd.note.value().inner(), wtx.txid.clone()))
+                    .map(move |nd| (nd.note.nullifier(&nd.fvk), nd.note.value().inner(), wtx.txid))
             })
             .collect()
     }
@@ -368,7 +367,7 @@ impl WalletTxns {
             .current
             .iter()
             .filter(|(_, wtx)| wtx.unconfirmed && wtx.block < cutoff)
-            .map(|(_, wtx)| wtx.txid.clone())
+            .map(|(_, wtx)| wtx.txid)
             .collect::<Vec<_>>();
 
         txids_to_remove
@@ -389,14 +388,14 @@ impl WalletTxns {
     ) -> u64 {
         let mut note_data = self
             .current
-            .get_mut(&txid)
+            .get_mut(txid)
             .unwrap()
             .o_notes
             .iter_mut()
             .find(|n| n.note.nullifier(&n.fvk) == *nullifier)
             .unwrap();
 
-        note_data.spent = Some((spent_txid.clone(), spent_at_height.into()));
+        note_data.spent = Some((*spent_txid, spent_at_height.into()));
         note_data.unconfirmed_spent = None;
         note_data.note.value().inner()
     }
@@ -412,14 +411,14 @@ impl WalletTxns {
     ) -> u64 {
         let mut note_data = self
             .current
-            .get_mut(&txid)
+            .get_mut(txid)
             .unwrap()
             .s_notes
             .iter_mut()
             .find(|n| n.nullifier == *nullifier)
             .unwrap();
 
-        note_data.spent = Some((spent_txid.clone(), spent_at_height.into()));
+        note_data.spent = Some((*spent_txid, spent_at_height.into()));
         note_data.unconfirmed_spent = None;
         note_data.note.value
     }
@@ -451,14 +450,14 @@ impl WalletTxns {
         unconfirmed: bool,
         datetime: u64,
     ) -> &'_ mut WalletTx {
-        if !self.current.contains_key(&txid) {
+        if !self.current.contains_key(txid) {
             self.current
-                .insert(txid.clone(), WalletTx::new(BlockHeight::from(height), datetime, &txid, unconfirmed));
-            self.last_txid = Some(txid.clone());
+                .insert(*txid, WalletTx::new(height, datetime, txid, unconfirmed));
+            self.last_txid = Some(*txid);
         }
         let wtx = self
             .current
-            .get_mut(&txid)
+            .get_mut(txid)
             .expect("Txid should be present");
 
         // Make sure the unconfirmed status matches
@@ -495,17 +494,16 @@ impl WalletTxns {
     ) -> Option<Position> {
         // Record this Tx as having spent some funds
         {
-            let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
+            let wtx = self.get_or_create_tx(&txid, height, unconfirmed, timestamp as u64);
 
             // Mark the height correctly, in case this was previously a mempool or
             // unconfirmed tx.
             wtx.block = height;
 
-            if wtx
+            if !wtx
                 .o_spent_nullifiers
                 .iter()
-                .find(|nf| **nf == nullifier)
-                .is_none()
+                .any(|nf| *nf == nullifier)
             {
                 wtx.o_spent_nullifiers.push(nullifier);
                 wtx.total_orchard_value_spent += value;
@@ -526,12 +524,11 @@ impl WalletTxns {
             wtx.o_notes
                 .iter_mut()
                 .find(|n| n.note.nullifier(&n.fvk) == nullifier)
-                .map(|nd| {
+                .and_then(|nd| {
                     // Record the spent height
                     nd.spent = Some((txid, height.into()));
                     nd.witness_position
                 })
-                .flatten()
         } else {
             None
         }
@@ -550,17 +547,16 @@ impl WalletTxns {
     ) {
         // Record this Tx as having spent some funds
         {
-            let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp as u64);
+            let wtx = self.get_or_create_tx(&txid, height, unconfirmed, timestamp as u64);
 
             // Mark the height correctly, in case this was previously a mempool or
             // unconfirmed tx.
             wtx.block = height;
 
-            if wtx
+            if !wtx
                 .s_spent_nullifiers
                 .iter()
-                .find(|nf| **nf == nullifier)
-                .is_none()
+                .any(|nf| *nf == nullifier)
             {
                 wtx.s_spent_nullifiers.push(nullifier);
                 wtx.total_sapling_value_spent += value;
@@ -578,13 +574,13 @@ impl WalletTxns {
                 .get_mut(&source_txid)
                 .expect("Txid should be present");
 
-            wtx.s_notes
+            if let Some(nd) = wtx
+                .s_notes
                 .iter_mut()
                 .find(|n| n.nullifier == nullifier)
-                .map(|nd| {
-                    // Record the spent height
-                    nd.spent = Some((txid, height.into()));
-                });
+            {
+                nd.spent = Some((txid, height.into()));
+            }
         }
     }
 
@@ -596,7 +592,7 @@ impl WalletTxns {
         timestamp: u64,
         total_transparent_value_spent: u64,
     ) {
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_tx(&txid, height, unconfirmed, timestamp);
         wtx.total_transparent_value_spent = total_transparent_value_spent;
 
         self.check_notes_mark_change(&txid);
@@ -617,7 +613,7 @@ impl WalletTxns {
                 .find(|u| u.txid == spent_txid && u.output_index == output_num as u64)
             {
                 // Mark this one as spent
-                spent_utxo.spent = Some(source_txid.clone());
+                spent_utxo.spent = Some(source_txid);
                 spent_utxo.spent_at_height = Some(source_height as i32);
                 spent_utxo.unconfirmed_spent = None;
 
@@ -659,7 +655,7 @@ impl WalletTxns {
         } else {
             wtx.utxos.push(Utxo {
                 address: taddr,
-                txid: txid.clone(),
+                txid,
                 output_index: output_num as u64,
                 script: vout.script_pubkey.0.clone(),
                 value: vout.value.into(),
@@ -683,7 +679,7 @@ impl WalletTxns {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), true, timestamp);
+        let wtx = self.get_or_create_tx(&txid, height, true, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
@@ -698,7 +694,7 @@ impl WalletTxns {
                     diversifier: *to.diversifier(),
                     note,
                     witnesses: WitnessCache::empty(),
-                    nullifier: Nullifier { 0: [0u8; 32] },
+                    nullifier: Nullifier([0u8; 32]),
                     spent: None,
                     unconfirmed_spent: None,
                     memo: None,
@@ -726,7 +722,7 @@ impl WalletTxns {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_tx(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
@@ -780,7 +776,7 @@ impl WalletTxns {
         // Check if this is a change note
         let is_change = self.total_funds_spent_in(&txid) > 0;
 
-        let wtx = self.get_or_create_tx(&txid, BlockHeight::from(height), unconfirmed, timestamp);
+        let wtx = self.get_or_create_tx(&txid, height, unconfirmed, timestamp);
         // Update the block height, in case this was a mempool or unconfirmed tx.
         wtx.block = height;
 
@@ -832,12 +828,12 @@ impl WalletTxns {
         note: Note,
         memo: Memo,
     ) {
-        self.current.get_mut(txid).map(|wtx| {
+        if let Some(wtx) = self.current.get_mut(txid) {
             wtx.s_notes
                 .iter_mut()
                 .find(|n| n.note == note)
                 .map(|n| n.memo = Some(memo));
-        });
+        }
     }
 
     // Update the memo for a orchard note if it already exists. The note has to
@@ -852,12 +848,12 @@ impl WalletTxns {
         // println!("Adding memo to orchard note");
         let note_nullifier = note.nullifier(fvk);
 
-        self.current.get_mut(txid).map(|wtx| {
+        if let Some(wtx) = self.current.get_mut(txid) {
             wtx.o_notes
                 .iter_mut()
                 .find(|n| n.note.nullifier(fvk) == note_nullifier)
                 .map(|n| n.memo = Some(memo));
-        });
+        }
     }
 
     pub fn add_outgoing_metadata(
@@ -871,10 +867,9 @@ impl WalletTxns {
             let new_omd: Vec<_> = outgoing_metadata
                 .into_iter()
                 .filter(|om| {
-                    wtx.outgoing_metadata
+                    !wtx.outgoing_metadata
                         .iter()
-                        .find(|o| **o == *om)
-                        .is_none()
+                        .any(|o| *o == *om)
                 })
                 .collect();
 

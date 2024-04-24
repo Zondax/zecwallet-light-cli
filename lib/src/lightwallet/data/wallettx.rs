@@ -62,7 +62,7 @@ pub struct WalletTx {
 
 impl WalletTx {
     pub fn serialized_version() -> u64 {
-        return 23;
+        23
     }
 
     pub fn new_txid(txid: &Vec<u8>) -> TxId {

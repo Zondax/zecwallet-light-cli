@@ -20,7 +20,6 @@ use zcash_primitives::{
 
 use crate::lightwallet::keys::in_memory::builder::BuilderError as InMemoryBuilderError;
 use crate::lightwallet::keys::in_memory::InMemoryBuilder;
-use crate::lightwallet::keys::keystores::Keystores;
 use crate::lightwallet::keys::ledger::{LedgerBuilder, LedgerError};
 
 cfg_if::cfg_if! {

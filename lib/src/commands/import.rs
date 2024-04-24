@@ -29,13 +29,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ImportComm
         args: &[&str],
         lightclient: &LightClient<P>,
     ) -> String {
-        if args.len() == 0 || args.len() > 3 {
+        if args.is_empty() || args.len() > 3 {
             return format!("Insufficient arguments\n\n{}", Command::<P>::help(self));
         }
 
         let (key, birthday, rescan) = if args.len() == 1 {
             // If only one arg, parse it as JSON
-            let json_args = match json::parse(&args[0]) {
+            let json_args = match json::parse(args[0]) {
                 Ok(j) => j,
                 Err(e) => {
                     let es = format!("Couldn't understand JSON: {}", e);
@@ -109,7 +109,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ImportComm
                 };
             }
 
-            return r;
+            r
         })
     }
 }

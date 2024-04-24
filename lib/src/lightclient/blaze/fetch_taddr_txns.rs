@@ -166,20 +166,19 @@ mod test {
     use crate::grpc::RawTransaction;
     use crate::lightclient::blaze;
     use crate::lightclient::config::UnitTestNetwork;
+    use crate::lightwallet::keys::data::tkey::WalletTKey;
     use crate::lightwallet::keys::InMemoryKeys;
-    use crate::lightwallet::walletkeys::wallettkey::WalletTKey;
 
     #[tokio::test]
     async fn out_of_order_txns() {
         // 5 t addresses
         let mut keys = InMemoryKeys::<UnitTestNetwork>::new_empty(UnitTestNetwork);
         let gened_taddrs: Vec<_> = (0 .. 5)
-            .into_iter()
             .map(|n| format!("taddr{}", n))
             .collect();
         keys.tkeys = gened_taddrs
             .iter()
-            .map(|ta| WalletTKey::empty(ta))
+            .map(WalletTKey::empty)
             .collect::<Vec<_>>();
 
         let ftt = FetchTaddrTxns::new(Arc::new(RwLock::new(keys.into())));
@@ -208,7 +207,6 @@ mod test {
                     let num_txns = rng.gen_range(50 .. 200);
 
                     let mut rtxs = (0 .. num_txns)
-                        .into_iter()
                         .map(|_| rng.gen_range(1 .. 100))
                         .map(|h| {
                             let mut rtx = RawTransaction::default();

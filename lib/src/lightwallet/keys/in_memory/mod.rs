@@ -29,15 +29,16 @@ use crate::{
 };
 
 pub(crate) mod builder;
-pub use builder::{BuilderError as InMemoryBuilderError, InMemoryBuilder};
+pub use builder::InMemoryBuilder;
 
+use crate::lightwallet::keys::data::okey::WalletOKey;
+use crate::lightwallet::keys::data::tkey::{WalletTKey, WalletTKeyType};
+use crate::lightwallet::keys::data::zkey::{WalletZKey, WalletZKeyType};
+use crate::lightwallet::keys::extended_key::{ExtendedPrivKey, KeyIndex};
 use crate::lightwallet::keys::utils::{double_sha256, ToBase58Check};
-use crate::lightwallet::walletkeys::walletokey::WalletOKey;
-use crate::lightwallet::walletkeys::wallettkey::{WalletTKey, WalletTKeyType};
-use crate::lightwallet::walletkeys::walletzkey::{WalletZKey, WalletZKeyType};
 
 // Manages all the keys in the wallet. Note that the RwLock for this is present
-// in `lightwallet.rs`, so we'll assume that this is already gone through a
+// in `impl`, so we'll assume that this is already gone through a
 // RwLock, so we don't lock any of the individual fields.
 pub struct InMemoryKeys<P> {
     // TODO: This struct is duplicated with LightWallet and LightClient
@@ -71,7 +72,7 @@ pub struct InMemoryKeys<P> {
 
 impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
     pub fn serialized_version() -> u64 {
-        return 21;
+        21
     }
 
     #[cfg(test)]
@@ -112,7 +113,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
                 },
             };
 
-            seed_bytes.copy_from_slice(&phrase.entropy());
+            seed_bytes.copy_from_slice(phrase.entropy());
         }
 
         let mut this = Self {
@@ -181,7 +182,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
                 // Calculate the viewing keys
                 extsks
                     .iter()
-                    .map(|sk| ExtendedFullViewingKey::from(sk))
+                    .map(ExtendedFullViewingKey::from)
                     .collect::<Vec<ExtendedFullViewingKey>>()
             };
 
@@ -192,7 +193,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
                 .collect::<Vec<PaymentAddress>>();
 
             // If extsks is of len 0, then this wallet is locked
-            let zkeys_result = if extsks.len() == 0 {
+            let zkeys_result = if extsks.is_empty() {
                 // Wallet is locked, so read only the viewing keys.
                 extfvks
                     .iter()
@@ -438,8 +439,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
         self.zkeys
             .iter()
             .find(|zk| &zk.zaddress == zaddress)
-            .map(|zk| zk.extsk.clone())
-            .flatten()
+            .and_then(|zk| zk.extsk.clone())
     }
 
     pub fn get_extsk_for_extfvk(
@@ -449,14 +449,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk == *extfvk)
-            .map(|zk| zk.extsk.clone())
-            .flatten()
+            .and_then(|zk| zk.extsk.clone())
     }
 
     pub fn get_taddr_to_sk_map(&self) -> HashMap<String, secp256k1::SecretKey> {
         self.tkeys
             .iter()
-            .map(|tk| (tk.address.clone(), tk.key.unwrap().clone()))
+            .map(|tk| (tk.address.clone(), tk.key.unwrap()))
             .collect()
     }
 
@@ -793,7 +792,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
     }
 
     // Removing encryption means unlocking it and setting the self.encrypted =
-    // false, permanantly removing the encryption
+    // false, permanently removing the encryption
     pub fn remove_encryption(
         &mut self,
         passwd: String,
@@ -828,11 +827,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
     }
 
     pub fn is_encrypted(&self) -> bool {
-        return self.encrypted;
+        self.encrypted
     }
 
     pub fn is_unlocked_for_spending(&self) -> bool {
-        return self.unlocked;
+        self.unlocked
     }
 
     /// STATIC METHODS
@@ -915,8 +914,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> InsecureKeystore for InMe
         &self,
         path: &[ChildIndex],
     ) -> Result<secp256k1::SecretKey, Self::Error> {
-        use crate::lightwallet::extended_key::{ExtendedPrivKey, KeyIndex};
-
         if !self.unlocked {
             return Err(InMemoryKeysError::WalletLocked);
         }

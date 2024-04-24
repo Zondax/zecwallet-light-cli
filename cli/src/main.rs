@@ -203,7 +203,7 @@ pub fn start_interactive(
                 let e = format!("Error executing command {}: {}", cmd, e);
                 eprintln!("{}", e);
                 error!("{}", e);
-                return "".to_string();
+                "".to_string()
             },
         }
     };

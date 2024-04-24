@@ -34,7 +34,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for HelpComman
         // Print a list of all commands
         match args.len() {
             0 => {
-                responses.push(format!("Available commands:"));
+                responses.push("Available commands:".to_string());
                 get_commands::<P>()
                     .iter()
                     .for_each(|(cmd, obj)| {

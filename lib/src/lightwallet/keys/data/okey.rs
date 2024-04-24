@@ -31,6 +31,10 @@ pub struct WalletOKey {
 }
 
 impl WalletOKey {
+    fn serialized_version() -> u8 {
+        1
+    }
+
     pub fn new_hdkey(
         hdkey_num: u32,
         spending_key: SpendingKey,
@@ -121,10 +125,6 @@ impl WalletOKey {
 
     pub fn fvk(&self) -> &'_ FullViewingKey {
         &self.fvk
-    }
-
-    fn serialized_version() -> u8 {
-        return 1;
     }
 
     pub fn read<R: Read>(mut inp: R) -> io::Result<Self> {

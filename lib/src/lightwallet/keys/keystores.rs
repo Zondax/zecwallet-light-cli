@@ -349,7 +349,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
         match self {
             Self::Memory(this) => this
                 .zkeys
-                .get(0)
+                .first()
                 .map(|zk| (zk.extfvk.fvk.ovk, zk.zaddress.clone())),
             #[cfg(feature = "ledger-support")]
             Self::Ledger(this) => {
@@ -498,7 +498,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
         let mut note_contents = vec![];
 
         // Writing the value in little endian
-        (&mut note_contents)
+        note_contents
             .write_u64::<LittleEndian>(note.value)
             .unwrap();
 

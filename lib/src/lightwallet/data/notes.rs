@@ -178,7 +178,7 @@ pub struct SaplingNoteData {
     pub(in crate::lightwallet) nullifier: sapling::Nullifier,
     pub spent: Option<(TxId, u32)>, // If this note was confirmed spent
 
-    // If this note was spent in a send, but has not yet been confirmed.
+    // If this note was spent in a send tx, but has not yet been confirmed.
     // Contains the txid and height at which it was broadcast
     pub unconfirmed_spent: Option<(TxId, u32)>,
     pub memo: Option<Memo>,
@@ -203,7 +203,7 @@ impl SaplingNoteData {
 
         let mut diversifier_bytes = [0u8; 11];
         reader.read_exact(&mut diversifier_bytes)?;
-        let diversifier = Diversifier { 0: diversifier_bytes };
+        let diversifier = Diversifier(diversifier_bytes);
 
         // To recover the note, read the value and r, and then use the payment address
         // to recreate the note

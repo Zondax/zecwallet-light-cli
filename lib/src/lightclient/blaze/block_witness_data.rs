@@ -25,6 +25,7 @@ use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
 use crate::lightclient::MERKLE_DEPTH;
 use crate::lightwallet::data::blockdata::BlockData;
 use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::data::wallettxs::WalletTxs;
 use crate::lightwallet::data::witnesscache::WitnessCache;
 use crate::utils::vec_to_array;
 use crate::{
@@ -34,7 +35,6 @@ use crate::{
         checkpoints::get_all_main_checkpoints,
         config::{LightClientConfig, MAX_REORG},
     },
-    lightwallet::wallet_txns::WalletTxns,
 };
 
 pub struct BlockAndWitnessData {
@@ -101,10 +101,10 @@ impl BlockAndWitnessData {
         verified_tree: Option<TreeState>,
         orchard_witnesses: Arc<RwLock<Option<BridgeTree<MerkleHashOrchard, MERKLE_DEPTH>>>>,
     ) {
-        if !existing_blocks.is_empty() {
-            if existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height {
-                panic!("Blocks are in wrong order");
-            }
+        if !existing_blocks.is_empty()
+            && existing_blocks.first().unwrap().height < existing_blocks.last().unwrap().height
+        {
+            panic!("Blocks are in wrong order");
         }
         self.verification_list
             .write()
@@ -207,9 +207,7 @@ impl BlockAndWitnessData {
         verification_list.dedup_by_key(|ts| ts.height);
 
         // Remember the highest tree that will be verified, and return that.
-        let heighest_tree = verification_list
-            .last()
-            .map(|ts| ts.clone());
+        let heighest_tree = verification_list.last().cloned();
 
         let mut start_trees = vec![];
 
@@ -230,11 +228,7 @@ impl BlockAndWitnessData {
         // Add all the verification trees as verified, so they can be used as starting
         // points. If any of them fails to verify, then we will fail the whole
         // thing anyway.
-        start_trees.extend(
-            verification_list
-                .iter()
-                .map(|t| t.clone()),
-        );
+        start_trees.extend(verification_list.iter().cloned());
 
         // Also add the wallet's heighest tree
         if self.verified_tree.is_some() {
@@ -324,7 +318,7 @@ impl BlockAndWitnessData {
             }
         }
 
-        return (true, heighest_tree);
+        (true, heighest_tree)
     }
 
     // Invalidate the block (and wallet txns associated with it) at the given block
@@ -332,7 +326,7 @@ impl BlockAndWitnessData {
     pub async fn invalidate_block(
         reorg_height: u64,
         existing_blocks: Arc<RwLock<Vec<BlockData>>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         orchard_witnesses: Arc<RwLock<Option<BridgeTree<MerkleHashOrchard, MERKLE_DEPTH>>>>,
     ) {
         // First, pop the first block (which is the top block) in the existing_blocks.
@@ -372,7 +366,7 @@ impl BlockAndWitnessData {
         &self,
         start_block: u64,
         end_block: u64,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         reorg_tx: UnboundedSender<Option<u64>>,
     ) -> (JoinHandle<Result<u64, String>>, Sender<CompactBlock>) {
         // info!("Starting node and witness sync");
@@ -477,11 +471,11 @@ impl BlockAndWitnessData {
                 .await
                 .map_err(|e| format!("Error processing blocks: {}", e))??;
 
-            // Return the earlist block that was synced, accounting for all reorgs
-            return Ok(earliest_block);
+            // Return the earliest block that was synced, accounting for all reorgs
+            Ok(earliest_block)
         });
 
-        return (h, tx);
+        (h, tx)
     }
 
     pub async fn track_orchard_note(
@@ -503,7 +497,7 @@ impl BlockAndWitnessData {
 
     pub async fn update_orchard_spends_and_witnesses(
         &self,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         scan_full_txn_tx: UnboundedSender<(TxId, BlockHeight)>,
     ) {
         // Go over all the blocks
@@ -562,7 +556,7 @@ impl BlockAndWitnessData {
                         // Check if the nullifier in this action belongs to us, which means it has been
                         // spent
                         for (wallet_nullifier, value, source_txid) in o_nullifiers.iter() {
-                            if action.nullifier.len() > 0
+                            if !action.nullifier.is_empty()
                                 && orchard::note::Nullifier::from_bytes(vec_to_array(&action.nullifier)).unwrap()
                                     == *wallet_nullifier
                             {
@@ -575,7 +569,7 @@ impl BlockAndWitnessData {
                                 wallet_txns
                                     .write()
                                     .await
-                                    .mark_txid_o_nf_spent(source_txid, &wallet_nullifier, &txid, cb.height());
+                                    .mark_txid_o_nf_spent(source_txid, wallet_nullifier, &txid, cb.height());
 
                                 // 2. Update the spent notes in the wallet
                                 let maybe_position = wallet_txns
@@ -715,7 +709,7 @@ impl BlockAndWitnessData {
                 CommitmentTree::empty()
             } else {
                 let tree_state = GrpcConnector::get_merkle_tree(uri, prev_height).await?;
-                let sapling_tree = hex::decode(&tree_state.tree).unwrap();
+                let sapling_tree = hex::decode(tree_state.tree).unwrap();
                 // self.verification_list.write().await.push(tree_state);
                 CommitmentTree::read(&sapling_tree[..]).map_err(|e| format!("{}", e))?
             };
@@ -802,7 +796,7 @@ impl BlockAndWitnessData {
             top_block
         };
 
-        return WitnessCache::new(fsb.into_vec(), top_block);
+        WitnessCache::new(fsb.into_vec(), top_block)
     }
 
     pub(crate) async fn update_witness_after_pos(
@@ -879,7 +873,7 @@ mod test {
     use crate::lightclient::config::LightClientConfig;
     use crate::lightclient::config::UnitTestNetwork;
     use crate::lightwallet::data::blockdata::BlockData;
-    use crate::lightwallet::wallet_txns::WalletTxns;
+    use crate::lightwallet::data::wallettxs::WalletTxs;
 
     #[tokio::test]
     async fn setup_finish_simple() {
@@ -941,7 +935,7 @@ mod test {
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxns::new())), reorg_tx)
+            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxs::new())), reorg_tx)
             .await;
 
         let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
@@ -989,7 +983,7 @@ mod test {
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxns::new())), reorg_tx)
+            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxs::new())), reorg_tx)
             .await;
 
         let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {
@@ -1035,7 +1029,7 @@ mod test {
         let mut reorged_blocks = existing_blocks
             .iter()
             .take(num_reorged)
-            .map(|b| b.clone())
+            .cloned()
             .collect::<Vec<_>>();
 
         // Reset the hashes
@@ -1082,7 +1076,7 @@ mod test {
         let (reorg_tx, mut reorg_rx) = unbounded_channel();
 
         let (h, cb_sender) = nw
-            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxns::new())), reorg_tx)
+            .start(start_block, end_block, Arc::new(RwLock::new(WalletTxs::new())), reorg_tx)
             .await;
 
         let send_h: JoinHandle<Result<(), String>> = tokio::spawn(async move {

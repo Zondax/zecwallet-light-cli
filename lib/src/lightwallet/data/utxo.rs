@@ -25,7 +25,7 @@ pub struct Utxo {
 
 impl Utxo {
     pub fn serialized_version() -> u64 {
-        return 3;
+        3
     }
 
     pub fn to_outpoint(&self) -> OutPoint {

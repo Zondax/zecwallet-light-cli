@@ -29,23 +29,24 @@ use zcash_primitives::{
 };
 
 use super::sync_data::BlazeSyncData;
+use crate::lightclient::config::LightClientConfig;
 use crate::lightwallet::data::outgoingtx::OutgoingTxMetadata;
+use crate::lightwallet::data::wallettxs::WalletTxs;
 use crate::lightwallet::keys::keystores::Keystores;
 use crate::lightwallet::keys::utils::ToBase58Check;
-use crate::lightwallet::lightwallet::LightWallet;
-use crate::{lightclient::config::LightClientConfig, lightwallet::wallet_txns::WalletTxns};
+use crate::lightwallet::wallet::LightWallet;
 
 pub struct FetchFullTxns<P> {
     config: LightClientConfig<P>,
     keys: Arc<RwLock<Keystores<P>>>,
-    wallet_txns: Arc<RwLock<WalletTxns>>,
+    wallet_txns: Arc<RwLock<WalletTxs>>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
     pub fn new(
         config: &LightClientConfig<P>,
         keys: Arc<RwLock<Keystores<P>>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
     ) -> Self {
         Self { config: config.clone(), keys, wallet_txns }
     }
@@ -186,7 +187,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             Ok(())
         });
 
-        return (h, txid_tx, tx_tx);
+        (h, txid_tx, tx_tx)
     }
 
     pub(crate) async fn scan_full_tx(
@@ -196,7 +197,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         unconfirmed: bool,
         block_time: u32,
         keys: Arc<RwLock<Keystores<P>>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         price: Option<f64>,
     ) {
         // Collect our t-addresses for easy checking
@@ -224,7 +225,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                                     height.into(),
                                     unconfirmed,
                                     block_time as u64,
-                                    &vout,
+                                    vout,
                                     n as u32,
                                 );
 
@@ -323,15 +324,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             keys.read()
                 .await
                 .get_all_zaddresses()
-                .await
-                .into_iter(),
+                .await,
         );
         let u_addresses: HashSet<String> = HashSet::from_iter(
             keys.read()
                 .await
                 .get_all_uaddresses()
-                .await
-                .into_iter(),
+                .await,
         );
 
         // Collect all our OVKs, to scan for outputs
@@ -341,12 +340,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
             let extfvks = guard
                 .get_all_extfvks()
                 .await
-                .into_iter()
                 .collect::<Vec<_>>();
 
             let ovks = extfvks
                 .iter()
-                .map(|k| k.fvk.ovk.clone())
+                .map(|k| k.fvk.ovk)
                 .collect::<Vec<_>>();
 
             let s_ivks = extfvks
@@ -369,7 +367,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 // Search all of our keys
                 for (i, ivk) in s_ivks.iter().enumerate() {
                     let (note, to, memo_bytes) =
-                        match try_sapling_note_decryption(&config.get_params(), height, &ivk, output) {
+                        match try_sapling_note_decryption(&config.get_params(), height, ivk, output) {
                             Some(ret) => ret,
                             None => continue,
                         };
@@ -385,7 +383,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                                 block_time as u64,
                                 note.clone(),
                                 to,
-                                &extfvks.get(i).unwrap(),
+                                extfvks.get(i).unwrap(),
                             );
                     }
 
@@ -407,7 +405,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 let omds = ovks
                     .iter()
                     .filter_map(|ovk| {
-                        match try_sapling_output_recovery(&config.get_params(), height, &ovk, &output) {
+                        match try_sapling_output_recovery(&config.get_params(), height, ovk, output) {
                             Some((note, payment_address, memo_bytes)) => {
                                 // Mark this tx as an outgoing tx, so we can grab all outgoing metadata
                                 is_outgoing_tx = true;
@@ -498,7 +496,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 {
                     is_outgoing_tx = true;
                     let address = LightWallet::<P>::orchard_ua_address(&config, &ua_address);
-                    let memo = Memo::from_bytes(&memo_bytes).unwrap_or(Memo::default());
+                    let memo = Memo::from_bytes(&memo_bytes).unwrap_or_default();
 
                     info!(
                         "Recovered output note of value {} memo {:?} sent to {}",

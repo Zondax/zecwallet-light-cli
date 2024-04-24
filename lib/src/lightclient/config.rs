@@ -176,10 +176,10 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
 
             Ok((config, block_height))
         } else {
-            return Err(Error::new(
+            Err(Error::new(
                 ErrorKind::ConnectionRefused,
                 "Couldn't get network from server, connection refused. Is the server address correct?".to_string(),
-            ));
+            ))
         }
     }
     pub fn set_data_dir(
@@ -197,7 +197,6 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         self.params
             .address_network()
             .unwrap_or(Network::Main)
-            .clone()
     }
 
     /// Build the Logging config
@@ -310,7 +309,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
     }
 
     pub fn wallet_exists(&self) -> bool {
-        return self.get_wallet_path().exists();
+        self.get_wallet_path().exists()
     }
 
     pub fn backup_existing_wallet(&self) -> Result<String, String> {
@@ -368,10 +367,8 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             },
             Err(e) => {
                 error!("Error getting sapling tree:{}\nWill return checkpoint instead.", e);
-                match checkpoints::get_closest_checkpoint(&self.chain_name, height) {
-                    Some((height, hash, tree)) => Some((height, hash.to_string(), tree.to_string())),
-                    None => None,
-                }
+                checkpoints::get_closest_checkpoint(&self.chain_name, height)
+                    .map(|(height, hash, tree)| (height, hash.to_string(), tree.to_string()))
             },
         }
     }
@@ -382,7 +379,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 let mut s = if s.starts_with("http") { s } else { "http://".to_string() + &s };
                 let uri: http::Uri = s.parse().unwrap();
                 if uri.port().is_none() {
-                    s = s + ":443";
+                    s += ":443";
                 }
                 s
             },

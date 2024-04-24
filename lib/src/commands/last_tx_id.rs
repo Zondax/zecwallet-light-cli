@@ -25,13 +25,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for LastTxIdCo
         lightclient: &LightClient<P>,
     ) -> String {
         RT.block_on(async move {
-            format!(
-                "{}",
-                lightclient
-                    .do_last_txid()
-                    .await
-                    .pretty(2)
-            )
+            lightclient
+                .do_last_txid()
+                .await
+                .pretty(2)
+                .to_string()
         })
     }
 }

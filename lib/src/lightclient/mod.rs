@@ -40,11 +40,12 @@ use crate::lightclient::blaze::sync_data::BlazeSyncData;
 use crate::lightclient::blaze::sync_status::SyncStatus;
 use crate::lightclient::blaze::trial_decryptions::TrialDecryptions;
 use crate::lightclient::blaze::update_notes::UpdateNotes;
+use crate::lightwallet::data::message::Message;
 use crate::lightwallet::data::wallettx::WalletTx;
 use crate::lightwallet::keys::keystores::KeystoresKind;
-use crate::lightwallet::lightwallet::LightWallet;
 use crate::lightwallet::utils::now;
-use crate::{grpc::GrpcConnector, grpc::RawTransaction, lightclient::config::MAX_REORG, lightwallet::message::Message};
+use crate::lightwallet::wallet::LightWallet;
+use crate::{grpc::GrpcConnector, grpc::RawTransaction, lightclient::config::MAX_REORG};
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
@@ -62,6 +63,12 @@ pub struct WalletStatus {
     pub is_syncing: bool,
     pub total_blocks: u64,
     pub synced_blocks: u64,
+}
+
+impl Default for WalletStatus {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WalletStatus {
@@ -100,7 +107,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             wallet: LightWallet::new(config.clone(), seed_phrase, height, 1, 1)?,
             config: config.clone(),
             mempool_monitor: std::sync::RwLock::new(None),
-            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+            bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
             sync_lock: Mutex::new(()),
         };
 
@@ -182,24 +189,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         const SAPLING_OUTPUT_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
         const SAPLING_SPEND_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
 
-        if sapling_output.len() > 0 {
-            if SAPLING_OUTPUT_HASH.to_string() != hex::encode(Sha256::digest(&sapling_output)) {
-                return Err(format!(
-                    "sapling-output hash didn't match. expected {}, found {}",
-                    SAPLING_OUTPUT_HASH,
-                    hex::encode(Sha256::digest(&sapling_output))
-                ));
-            }
+        if !sapling_output.is_empty() && *SAPLING_OUTPUT_HASH != hex::encode(Sha256::digest(sapling_output)) {
+            return Err(format!(
+                "sapling-output hash didn't match. expected {}, found {}",
+                SAPLING_OUTPUT_HASH,
+                hex::encode(Sha256::digest(sapling_output))
+            ));
         }
 
-        if sapling_spend.len() > 0 {
-            if SAPLING_SPEND_HASH.to_string() != hex::encode(Sha256::digest(&sapling_spend)) {
-                return Err(format!(
-                    "sapling-spend hash didn't match. expected {}, found {}",
-                    SAPLING_SPEND_HASH,
-                    hex::encode(Sha256::digest(&sapling_spend))
-                ));
-            }
+        if !sapling_spend.is_empty() && *SAPLING_SPEND_HASH != hex::encode(Sha256::digest(sapling_spend)) {
+            return Err(format!(
+                "sapling-spend hash didn't match. expected {}, found {}",
+                SAPLING_SPEND_HASH,
+                hex::encode(Sha256::digest(sapling_spend))
+            ));
         }
 
         // Ensure that the sapling params are stored on disk properly as well. Only on
@@ -210,7 +213,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 match LightClient::<P>::write_file_if_not_exists(
                     &zcash_params_dir,
                     "sapling-output.params",
-                    &sapling_output,
+                    sapling_output,
                 ) {
                     Ok(_) => {},
                     Err(e) => return Err(format!("Warning: Couldn't write the output params!\n{}", e)),
@@ -219,7 +222,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 match LightClient::<P>::write_file_if_not_exists(
                     &zcash_params_dir,
                     "sapling-spend.params",
-                    &sapling_spend,
+                    sapling_spend,
                 ) {
                     Ok(_) => {},
                     Err(e) => return Err(format!("Warning: Couldn't write the spend params!\n{}", e)),
@@ -246,7 +249,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             Some((height, hash, tree)) => {
                 info!("Setting initial state to height {}, tree {}", height, tree);
                 self.wallet
-                    .set_initial_block(height, &hash.as_str(), &tree.as_str())
+                    .set_initial_block(height, hash.as_str(), tree.as_str())
                     .await;
             },
             _ => {},
@@ -266,7 +269,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             Some((height, hash, tree)) => {
                 info!("Setting initial state to height {height}, tree {tree}");
                 self.wallet
-                    .set_initial_block(height, &hash.as_str(), &tree.as_str())
+                    .set_initial_block(height, hash.as_str(), tree.as_str())
                     .await;
             },
             _ => {},
@@ -287,7 +290,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
-                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
                 };
 
                 l.set_wallet_initial_state(latest_block)
@@ -335,7 +338,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
-                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
                 };
 
                 l.set_wallet_initial_state(latest_block)
@@ -412,7 +415,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                         config: config.clone(),
                         mempool_monitor: std::sync::RwLock::new(None),
                         sync_lock: Mutex::new(()),
-                        bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                        bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
                     };
 
                     l.set_wallet_initial_state(birthday)
@@ -446,7 +449,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     config: config.clone(),
                     mempool_monitor: std::sync::RwLock::new(None),
                     sync_lock: Mutex::new(()),
-                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(&config))),
+                    bsync_data: Arc::new(RwLock::new(BlazeSyncData::new(config))),
                 };
 
                 info!("Read wallet with birthday {}", lc.wallet.get_birthday().await);
@@ -783,7 +786,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         }
 
         match price.zec_price {
-            None => return "Error: No price".to_string(),
+            None => "Error: No price".to_string(),
             Some((ts, p)) => {
                 let o = object! {
                     "zec_price" => p,
@@ -1307,7 +1310,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             self.do_import_sk(key, birthday).await
         } else if key.starts_with(self.config.hrp_sapling_viewing_key()) {
             self.do_import_vk(key, birthday).await
-        } else if key.starts_with("K") || key.starts_with("L") {
+        } else if key.starts_with('K') || key.starts_with('L') {
             self.do_import_tk(key).await
         } else {
             Err(format!("'{}' was not recognized as either a spending key or a viewing key", key,))
@@ -1468,7 +1471,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             .current
             .iter()
             .filter_map(|(txid, wtx)| match wtx.zec_price {
-                None => Some((txid.clone(), wtx.datetime)),
+                None => Some((*txid, wtx.datetime)),
                 Some(_) => None,
             })
             .collect::<Vec<(TxId, u64)>>();
@@ -1692,22 +1695,21 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             return Err(w);
         }
 
-        if latest_blockid.height == last_scanned_height {
-            if !latest_blockid.hash.is_empty()
-                && BlockHash::from_slice(&latest_blockid.hash).to_string() != self.wallet.last_scanned_hash().await
-            {
-                warn!("One block reorg at height {}", last_scanned_height);
-                // This is a one-block reorg, so pop the last block. Even if there are more
-                // blocks to reorg, this is enough to trigger a sync, which will
-                // then reorg the remaining blocks
-                BlockAndWitnessData::invalidate_block(
-                    last_scanned_height,
-                    self.wallet.blocks.clone(),
-                    self.wallet.txns.clone(),
-                    self.wallet.orchard_witnesses.clone(),
-                )
-                .await;
-            }
+        if latest_blockid.height == last_scanned_height
+            && !latest_blockid.hash.is_empty()
+            && BlockHash::from_slice(&latest_blockid.hash).to_string() != self.wallet.last_scanned_hash().await
+        {
+            warn!("One block reorg at height {}", last_scanned_height);
+            // This is a one-block reorg, so pop the last block. Even if there are more
+            // blocks to reorg, this is enough to trigger a sync, which will
+            // then reorg the remaining blocks
+            BlockAndWitnessData::invalidate_block(
+                last_scanned_height,
+                self.wallet.blocks.clone(),
+                self.wallet.txns.clone(),
+                self.wallet.orchard_witnesses.clone(),
+            )
+            .await;
         }
 
         // Re-read the last scanned height
@@ -1810,7 +1812,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     Err(_) => vec![],
                 };
 
-                let witnesses = if orchard_tree.len() > 0 {
+                let witnesses = if !orchard_tree.is_empty() {
                     let tree =
                         CommitmentTree::<MerkleHashOrchard>::read(&orchard_tree[..]).map_err(|e| format!("{}", e))?;
                     if let Some(frontier) = tree

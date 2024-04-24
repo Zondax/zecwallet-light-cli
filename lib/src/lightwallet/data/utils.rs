@@ -11,6 +11,7 @@ pub fn read_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
     let mut r_bytes: [u8; 32] = [0; 32];
     reader.read_exact(&mut r_bytes)?;
 
+    // todo: the note type should have been an enum for more clarity?
     let r = match note_type {
         1 => Rseed::BeforeZip212(jubjub::Fr::from_bytes(&r_bytes).unwrap()),
         2 => Rseed::AfterZip212(r_bytes),

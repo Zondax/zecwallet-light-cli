@@ -38,7 +38,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
         // 1 - A set of 2(+1 optional) arguments for a single address send representing
         // address, value, memo? 2 - A single argument in the form of a JSON
         // string that is "[{address: address, value: value, memo: memo},...]"
-        if args.len() < 1 || args.len() > 3 {
+        if args.is_empty() || args.len() > 3 {
             return Command::<P>::help(self);
         }
 
@@ -47,7 +47,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
             let send_args = if args.len() == 1 {
                 let arg_list = args[0];
 
-                let json_args = match json::parse(&arg_list) {
+                let json_args = match json::parse(arg_list) {
                     Ok(j) => j,
                     Err(e) => {
                         let es = format!("Couldn't understand JSON: {}", e);
@@ -70,7 +70,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SendComman
                     .members()
                     .map(|j| {
                         if !j.has_key("address") || !j.has_key("amount") {
-                            Err(format!("Need 'address' and 'amount'\n"))
+                            Err("Need 'address' and 'amount'\n".to_string())
                         } else {
                             let amount = match j["amount"].as_str() {
                                 Some("entire-verified-zbalance") => all_zbalance,

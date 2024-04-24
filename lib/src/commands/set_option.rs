@@ -3,7 +3,7 @@ use zcash_primitives::consensus;
 
 use crate::commands::Command;
 use crate::lightclient::LightClient;
-use crate::lightwallet::options::MemoDownloadOption;
+use crate::lightwallet::data::options::MemoDownloadOption;
 use crate::RT;
 
 pub struct SetOptionCommand {}
@@ -33,10 +33,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for SetOptionC
         }
 
         let option = args[0];
-        let values: Vec<&str> = option.split("=").collect();
+        let values: Vec<&str> = option.split('=').collect();
 
         if values.len() != 2 {
-            return format!("Error: Please set option value like: <optionname>=<optionvalue>");
+            return "Error: Please set option value like: <optionname>=<optionvalue>".to_string();
         }
 
         let option_name = values[0];

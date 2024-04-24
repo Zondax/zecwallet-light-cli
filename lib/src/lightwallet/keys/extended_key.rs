@@ -70,7 +70,7 @@ impl ExtendedPrivKey {
     pub fn with_seed(seed: &[u8]) -> Result<ExtendedPrivKey, Error> {
         let signature = {
             let mut hmac = Hmac::new_from_slice(b"Bitcoin seed").unwrap();
-            hmac.update(&seed);
+            hmac.update(seed);
             hmac.finalize().into_bytes()
         };
         let sig_bytes = signature.as_slice();

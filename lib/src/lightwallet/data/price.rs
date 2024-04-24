@@ -37,7 +37,7 @@ impl WalletZecPriceInfo {
     }
 
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

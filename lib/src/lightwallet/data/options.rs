@@ -17,7 +17,7 @@ impl Default for WalletOptions {
 
 impl WalletOptions {
     pub fn serialized_version() -> u64 {
-        return 2;
+        2
     }
 
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {

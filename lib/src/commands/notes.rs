@@ -44,13 +44,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NotesComma
         };
 
         RT.block_on(async move {
-            format!(
-                "{}",
-                lightclient
-                    .do_list_notes(all_notes)
-                    .await
-                    .pretty(2)
-            )
+            lightclient
+                .do_list_notes(all_notes)
+                .await
+                .pretty(2)
+                .to_string()
         })
     }
 }

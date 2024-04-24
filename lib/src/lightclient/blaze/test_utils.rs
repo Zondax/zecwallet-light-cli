@@ -107,7 +107,7 @@ impl FakeTransaction {
 
         let note = Note {
             g_d: to.diversifier().g_d().unwrap(),
-            pk_d: to.pk_d().clone(),
+            pk_d: *to.pk_d(),
             value,
             rseed: Rseed::AfterZip212(rseed_bytes),
         };
@@ -121,7 +121,7 @@ impl FakeTransaction {
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
-        let cv = ValueCommitment { value, randomness: rcv.clone() };
+        let cv = ValueCommitment { value, randomness: rcv };
 
         let cmu = note.cmu();
         let od = OutputDescription {
@@ -185,7 +185,7 @@ impl FakeTransaction {
         ovk: &OutgoingViewingKey,
         to: &PaymentAddress,
     ) {
-        let _ = self.add_sapling_output(value, Some(ovk.clone()), to);
+        let _ = self.add_sapling_output(value, Some(*ovk), to);
 
         let mut cs = CompactSaplingSpend::default();
         cs.nf = nf.to_vec();
@@ -217,7 +217,7 @@ impl FakeTransaction {
         value: u64,
     ) {
         let mut hash160 = ripemd160::Ripemd160::new();
-        hash160.update(Sha256::digest(&pk.serialize()[..].to_vec()));
+        hash160.update(Sha256::digest(&pk.serialize()[..]));
 
         let taddr_bytes = hash160.finalize();
 
@@ -347,7 +347,7 @@ impl FakeCompactBlock {
             // Create a fake Note for the account
             let note = Note {
                 g_d: to.diversifier().g_d().unwrap(),
-                pk_d: to.pk_d().clone(),
+                pk_d: *to.pk_d(),
                 value: value.into(),
                 rseed: Rseed::AfterZip212(random_u8_32()),
             };
@@ -597,7 +597,7 @@ impl TxProver for FakeTxProver {
         // Compute value commitment
         let value_commitment: jubjub::ExtendedPoint = cv.commitment().into();
 
-        let rk = redjubjub::PublicKey(proof_generation_key.ak.clone().into()).randomize(ar, SPENDING_KEY_GENERATOR);
+        let rk = redjubjub::PublicKey(proof_generation_key.ak.into()).randomize(ar, SPENDING_KEY_GENERATOR);
 
         Ok((zkproof, value_commitment, rk))
     }
@@ -629,7 +629,7 @@ impl TxProver for FakeTxProver {
         _value_balance: Amount,
         _sighash: &[u8; 32],
     ) -> Result<Signature, ()> {
-        let fake_bytes = vec![0u8; 64];
+        let fake_bytes = [0u8; 64];
         Signature::read(&fake_bytes[..]).map_err(|_e| ())
     }
 }

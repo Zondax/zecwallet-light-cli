@@ -11,6 +11,7 @@ pub mod grpc;
 pub mod lightclient;
 pub mod lightwallet;
 mod utils;
+
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
 #[folder = "zcash-params/"]
@@ -21,5 +22,5 @@ pub struct SaplingParams;
 pub struct ServerCert;
 
 lazy_static! {
-    static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
+    static ref RT: Runtime = Runtime::new().unwrap();
 }

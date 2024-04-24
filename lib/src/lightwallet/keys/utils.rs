@@ -7,7 +7,7 @@ use sha2::Sha256;
 
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
-    let h1 = Sha256::digest(&payload);
+    let h1 = Sha256::digest(payload);
     let h2 = Sha256::digest(&h1);
     h2.to_vec()
 }
@@ -56,14 +56,14 @@ impl FromBase58Check for str {
             Err(error) => return Err(io::Error::new(ErrorKind::InvalidData, format!("{:?}", error))),
         };
         if payload.len() < 5 {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Checksum length")));
+            return Err(io::Error::new(ErrorKind::InvalidData, "Invalid Checksum length".to_string()));
         }
 
         let checksum_index = payload.len() - 4;
         let provided_checksum = payload.split_off(checksum_index);
         let checksum = double_sha256(&payload)[.. 4].to_vec();
         if checksum != provided_checksum {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Invalid Checksum")));
+            return Err(io::Error::new(ErrorKind::InvalidData, "Invalid Checksum".to_string()));
         }
         Ok((payload[0], payload[1 ..].to_vec()))
     }

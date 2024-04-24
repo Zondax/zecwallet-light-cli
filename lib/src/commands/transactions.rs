@@ -41,13 +41,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for Transactio
         };
 
         RT.block_on(async move {
-            format!(
-                "{}",
-                lightclient
-                    .do_list_transactions(include_memo_hex)
-                    .await
-                    .pretty(2)
-            )
+            lightclient
+                .do_list_transactions(include_memo_hex)
+                .await
+                .pretty(2)
+                .to_string()
         })
     }
 }

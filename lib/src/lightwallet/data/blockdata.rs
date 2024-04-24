@@ -18,7 +18,7 @@ pub struct BlockData {
 
 impl BlockData {
     pub fn serialized_version() -> u64 {
-        return 20;
+        20
     }
 
     pub(crate) fn new_with(

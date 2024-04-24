@@ -68,8 +68,7 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
             .zkeys
             .iter()
             .find(|zk| zk.extfvk.fvk.vk.ivk().to_repr() == key)
-            .map(|zk| zk.extsk.clone())
-            .flatten()
+            .and_then(|zk| zk.extsk.clone())
             .ok_or(BuilderError::NoAssociatedSpendingKey)?;
 
         self.inner

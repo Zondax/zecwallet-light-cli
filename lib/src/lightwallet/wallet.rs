@@ -38,33 +38,35 @@ use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
 use crate::lightclient::config::LightClientConfig;
 use crate::lightclient::MERKLE_DEPTH;
 use crate::lightwallet::data::blockdata::BlockData;
+use crate::lightwallet::data::message::Message;
 use crate::lightwallet::data::notes::{SaplingNoteData, SpendableOrchardNote, SpendableSaplingNote};
+use crate::lightwallet::data::options::{MemoDownloadOption, WalletOptions};
 use crate::lightwallet::data::price::WalletZecPriceInfo;
 use crate::lightwallet::data::utxo::Utxo;
 use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::data::wallettxs::WalletTxs;
+use crate::lightwallet::keys::data::tkey::WalletTKey;
+use crate::lightwallet::keys::data::zkey::{WalletZKey, WalletZKeyType};
 use crate::lightwallet::keys::keystores::Keystores;
 use crate::lightwallet::keys::InMemoryKeys;
-use crate::lightwallet::message::Message;
-use crate::lightwallet::options::{MemoDownloadOption, WalletOptions};
 use crate::lightwallet::send_progress::SendProgress;
 use crate::lightwallet::utils;
-use crate::lightwallet::wallet_txns::WalletTxns;
-use crate::lightwallet::walletkeys::wallettkey::WalletTKey;
-use crate::lightwallet::walletkeys::walletzkey::{WalletZKey, WalletZKeyType};
 
 pub struct LightWallet<P> {
     // All the keys in the wallet
     keys: Arc<RwLock<Keystores<P>>>,
 
-    // The block at which this wallet was born. Rescans
-    // will start from here.
+    // The block at which this wallet was born. Rescans will start from here.
     birthday: AtomicU64,
 
-    // The last 100 blocks, used if something gets re-orged
+    // Progress of an outgoing tx
+    send_progress: Arc<RwLock<SendProgress>>,
+
+    // The last 100 blocks, used if something gets re-organized
     pub(crate) blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of all txns
-    pub(crate) txns: Arc<RwLock<WalletTxns>>,
+    pub(crate) txns: Arc<RwLock<WalletTxs>>,
 
     // Wallet options
     pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
@@ -78,16 +80,13 @@ pub struct LightWallet<P> {
     // The Orchard incremental tree
     pub(crate) orchard_witnesses: Arc<RwLock<Option<BridgeTree<MerkleHashOrchard, MERKLE_DEPTH>>>>,
 
-    // Progress of an outgoing tx
-    send_progress: Arc<RwLock<SendProgress>>,
-
     // The current price of ZEC. (time_fetched, price in USD)
     pub price: Arc<RwLock<WalletZecPriceInfo>>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub fn serialized_version() -> u64 {
-        return 25;
+        25
     }
 
     pub fn new(
@@ -102,7 +101,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         Ok(Self {
             keys: Arc::new(RwLock::new(keys.into())),
-            txns: Arc::new(RwLock::new(WalletTxns::new())),
+            txns: Arc::new(RwLock::new(WalletTxs::new())),
             blocks: Arc::new(RwLock::new(vec![])),
             wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
@@ -158,8 +157,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
-        Vector::write(&mut writer, tree.prior_bridges(), |mut w, b| write_bridge(&mut w, b))?;
-        Optional::write(&mut writer, tree.current_bridge().as_ref(), |mut w, b| write_bridge(&mut w, b))?;
+        Vector::write(&mut writer, tree.prior_bridges(), |mut w, b| write_bridge(w, b))?;
+        Optional::write(&mut writer, tree.current_bridge().as_ref(), |mut w, b| write_bridge(w, b))?;
         Vector::write_sized(&mut writer, tree.witnessed_indices().iter(), |mut w, (pos, i)| {
             write_position(&mut w, *pos)?;
             write_usize_leu64(&mut w, *i)
@@ -222,7 +221,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut txns = if version <= 14 { WalletTxns::read_old(&mut reader) } else { WalletTxns::read(&mut reader) }?;
+        let mut txns = if version <= 14 { WalletTxs::read_old(&mut reader) } else { WalletTxs::read(&mut reader) }?;
 
         let chain_name = utils::read_string(&mut reader)?;
 
@@ -249,7 +248,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
                 let buf = Vector::read(r, |r| r.read_u8())?;
                 TreeState::decode(&buf[..])
-                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("Read Error: {}", e.to_string())))
+                    .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("Read Error: {}", e)))
             })?
         };
 
@@ -259,7 +258,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             let spendable_keys: Vec<_> = keys
                 .get_all_extfvks()
                 .await
-                .into_iter()
                 .filter(|extfvk| futures::executor::block_on(keys.have_sapling_spending_key(extfvk)))
                 .collect();
 
@@ -317,7 +315,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             let keys = self.keys().read().await;
 
             if !keys.writable() {
-                return Err(Error::new(ErrorKind::InvalidInput, format!("Wallet wasn't ready to be written.")));
+                return Err(Error::new(ErrorKind::InvalidInput, "Wallet wasn't ready to be written.".to_string()));
             }
 
             // Write the version
@@ -396,7 +394,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         self.keys.clone()
     }
 
-    pub fn txns(&self) -> Arc<RwLock<WalletTxns>> {
+    pub fn txns(&self) -> Arc<RwLock<WalletTxs>> {
         self.txns.clone()
     }
 
@@ -416,7 +414,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .read()
             .await
             .iter()
-            .map(|b| b.clone())
+            .cloned()
             .collect()
     }
 
@@ -424,15 +422,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         hrp: &str,
         note: &SaplingNoteData,
     ) -> Option<String> {
-        match note
-            .extfvk
+        note.extfvk
             .fvk
             .vk
             .to_payment_address(note.diversifier)
-        {
-            Some(pa) => Some(encode_payment_address(hrp, &pa)),
-            None => None,
-        }
+            .map(|pa| encode_payment_address(hrp, &pa))
     }
 
     pub fn orchard_ua_address(
@@ -601,14 +595,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         if keys
             .tkeys
             .iter()
-            .find(|&tk| tk.address == address)
-            .is_some()
+            .any(|tk| tk.address == address)
         {
             return "Error: Key already exists".to_string();
         }
 
         keys.tkeys.push(sk);
-        return address;
+        address
     }
 
     // Add a new imported spending key to the wallet
@@ -632,7 +625,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // First, try to interpret the key
         let extsk = match decode_extended_spending_key(self.config.hrp_sapling_private_key(), &sk) {
             Ok(Some(k)) => k,
-            Ok(None) => return format!("Error: Couldn't decode spending key"),
+            Ok(None) => return "Error: Couldn't decode spending key".to_string(),
             Err(e) => return format!("Error importing spending key: {}", e),
         };
 
@@ -640,8 +633,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         if keys
             .zkeys
             .iter()
-            .find(|&wk| wk.extsk.is_some() && wk.extsk.as_ref().unwrap() == &extsk.clone())
-            .is_some()
+            .any(|wk| wk.extsk.is_some() && wk.extsk.as_ref().unwrap() == &extsk.clone())
         {
             return "Error: Key already exists".to_string();
         }
@@ -694,7 +686,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // First, try to interpret the key
         let extfvk = match decode_extended_full_viewing_key(self.config.hrp_sapling_viewing_key(), &vk) {
             Ok(Some(k)) => k,
-            Ok(None) => return format!("Error: Couldn't decode viewing key"),
+            Ok(None) => return "Error: Couldn't decode viewing key".to_string(),
             Err(e) => return format!("Error importing viewing key: {}", e),
         };
 
@@ -702,8 +694,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         if keys
             .zkeys
             .iter()
-            .find(|wk| wk.extfvk == extfvk.clone())
-            .is_some()
+            .any(|wk| wk.extfvk == extfvk.clone())
         {
             return "Error: Key already exists".to_string();
         }
@@ -793,7 +784,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     /// which to select anchors, based on the current synchronised block
     /// chain.
     async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
-        match {
+        let res = {
             let blocks = self.blocks.read().await;
             (
                 blocks
@@ -803,7 +794,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .first()
                     .map(|block| block.height as u32),
             )
-        } {
+        };
+        match res {
             (Some(min_height), Some(max_height)) => {
                 let target_height = max_height + 1;
 
@@ -824,7 +816,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
         {
             Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
-            None => return 0,
+            None => 0,
         }
     }
 
@@ -908,7 +900,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .iter()
                     .filter(|utxo| utxo.spent.is_none())
             })
-            .map(|utxo| utxo.clone())
+            .cloned()
             .collect::<Vec<Utxo>>()
     }
 
@@ -963,11 +955,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 if keys
                     .have_sapling_spending_key(&nd.extfvk)
                     .await
+                    && tx.block > BlockHeight::from_u32(anchor_height)
                 {
-                    if tx.block > BlockHeight::from_u32(anchor_height) {
-                        // If confirmed but dont have anchor yet, it is unconfirmed
-                        sum += nd.note.value
-                    }
+                    // If confirmed but dont have anchor yet, it is unconfirmed
+                    sum += nd.note.value
                 }
             }
         }
@@ -1050,7 +1041,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     if keys
                         .have_sapling_spending_key(&nd.extfvk)
                         .await
-                        && nd.witnesses.len() > 0
+                        && !nd.witnesses.is_empty()
                     {
                         sum += nd.note.value;
                     }
@@ -1186,7 +1177,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
             .current
             .iter()
-            .map(|(txid, wtx)| (txid.clone(), wtx.block))
+            .map(|(txid, wtx)| (*txid, wtx.block))
             .collect();
 
         // Go over all the sapling notes that might need updating
@@ -1201,7 +1192,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
                     .for_each(|nd| {
                         let txid = nd.spent.unwrap().0;
-                        if let Some(height) = spent_txid_map.get(&txid).map(|b| *b) {
+                        if let Some(height) = spent_txid_map.get(&txid).copied() {
                             nd.spent = Some((txid, height.into()));
                         }
                     })
@@ -1270,12 +1261,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                                 auth_path.unwrap().try_into().unwrap(),
                             );
 
-                            Some(SpendableOrchardNote {
-                                txid,
-                                sk: maybe_sk.unwrap(),
-                                note: note.note.clone(),
-                                merkle_path,
-                            })
+                            Some(SpendableOrchardNote { txid, sk: maybe_sk.unwrap(), note: note.note, merkle_path })
                         }
                     }
                 }
@@ -1379,7 +1365,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
             .iter()
             .filter(|utxo| utxo.unconfirmed_spent.is_none() && utxo.spent.is_none())
-            .map(|utxo| utxo.clone())
+            .cloned()
             .collect::<Vec<_>>();
 
         // Check how much we've selected
@@ -1438,7 +1424,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // display a proper error
         let total_value_selected =
             (orchard_value_selected + sapling_value_selected + transparent_value_selected).unwrap();
-        return (o_notes, s_notes, utxos, total_value_selected);
+
+        (o_notes, s_notes, utxos, total_value_selected)
     }
 
     pub async fn send_to_address<F, Fut, PR: TxProver + Send + Sync>(
@@ -1466,8 +1453,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 Ok((txid, rawtx))
             },
             Err(e) => {
-                self.set_send_error(format!("{}", e))
-                    .await;
+                self.set_send_error(e.to_string()).await;
                 Err(e)
             },
         }
@@ -1489,7 +1475,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
 
         let start_time = utils::now();
-        if tos.len() == 0 {
+        if tos.is_empty() {
             return Err("Need at least one destination address".to_string());
         }
 
@@ -1605,10 +1591,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .map(|utxo| {
                 let outpoint: OutPoint = utxo.to_outpoint();
 
-                let coin = TxOut {
-                    value: Amount::from_u64(utxo.value).unwrap(),
-                    script_pubkey: Script { 0: utxo.script.clone() },
-                };
+                let coin =
+                    TxOut { value: Amount::from_u64(utxo.value).unwrap(), script_pubkey: Script(utxo.script.clone()) };
 
                 match address_to_key.get(&utxo.address) {
                     Some(pk) => {
@@ -1661,7 +1645,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // If no Sapling notes were added, add the change address manually. That is,
         // send the change to our sapling address manually. Note that if a sapling note
         // was spent, the builder will automatically send change to that address
-        if s_notes.len() == 0 {
+        if s_notes.is_empty() {
             builder.send_change_to(first_zkey_ovk, first_zkey_addr);
         }
 
@@ -1833,7 +1817,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             FetchFullTxns::<P>::scan_full_tx(
                 self.config.clone(),
                 tx,
-                target_height.into(),
+                target_height,
                 true,
                 utils::now() as u32,
                 self.keys.clone(),

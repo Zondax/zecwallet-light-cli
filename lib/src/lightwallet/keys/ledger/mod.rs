@@ -110,7 +110,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     /// but won't verify that the correct app is open or that is a "known"
     /// device
     fn connect_ledger() -> Result<ZcashApp<TransportNativeHID>, LedgerError> {
-        let hidapi = ledger_transport_hid::hidapi::HidApi::new().map_err(|hid| LedgerHIDError::Hid(hid))?;
+        let hidapi = ledger_transport_hid::hidapi::HidApi::new().map_err(LedgerHIDError::Hid)?;
 
         let transport = TransportNativeHID::new(&hidapi)?;
         let app = ZcashApp::new(transport);
@@ -201,7 +201,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
 
         guard
             .values()
-            .map(|(ivk, d, _)| (SaplingIvk(ivk.0.clone()), d.clone()))
+            .map(|(ivk, d, _)| (SaplingIvk(ivk.0), *d))
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -212,7 +212,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
 
         guard
             .values()
-            .map(|(_, _, ovk)| ovk.clone())
+            .map(|(_, _, ovk)| *ovk)
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -227,7 +227,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
                 ivk.to_payment_address(d)
                     .expect("known ivk and div to get payment addres")
             })
-            .map(move |addr| encode_payment_address(&hrp, &addr))
+            .map(move |addr| encode_payment_address(hrp, &addr))
     }
 
     /// Retrieve all the cached/known transparent public keys
@@ -257,7 +257,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
             .read()
             .await
             .values()
-            .map(|key| (compute_taddr(key, &self.config.base58_pubkey_address(), &[]), key.clone()))
+            .map(|key| (compute_taddr(key, &self.config.base58_pubkey_address(), &[]), *key))
             .collect()
     }
 
@@ -309,7 +309,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             .read()
             .await
             .get(path)
-            .map(|(_, _, ovk)| ovk.clone())
+            .map(|(_, _, ovk)| *ovk)
     }
 
     /// Given an address, verify that we have N addresses
@@ -332,7 +332,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             // get the last N addresses
             .take(GAP_RULE_UNUSED_ADDRESSES)
             // get the transparent address of each
-            .map(move |(path, key)| (*path, compute_taddr(&key, &prefix, &[])))
+            .map(move |(path, key)| (*path, compute_taddr(key, &prefix, &[])))
             .enumerate()
             // find the one that matches the needle
             .find(|(_, (_, s))| s == address);
@@ -500,7 +500,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
                     path[4].to_le_bytes(),
                 ]
             })
-            .map(|path_bytes| bytemuck::cast(path_bytes))
+            .map(bytemuck::cast)
             .collect::<Vec<[u8; 4 * 5]>>();
 
         writer.write_u64::<LittleEndian>(transparent_paths.len() as u64)?;
@@ -515,7 +515,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             .await
             .keys()
             .map(|path| [path[0].to_le_bytes(), path[1].to_le_bytes(), path[2].to_le_bytes()])
-            .map(|path_bytes| bytemuck::cast(path_bytes))
+            .map(bytemuck::cast)
             .collect::<Vec<[u8; 4 * 3]>>();
 
         writer.write_u64::<LittleEndian>(shielded_paths.len() as u64)?;
@@ -556,7 +556,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
         if ledger_id != Self::get_id(&app).await? {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
-                format!("Detected different ledger than used previously"),
+                "Detected different ledger than used previously".to_string(),
             ));
         }
 
@@ -614,7 +614,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             let ivk = app
                 .get_ivk(idx)
                 .await
-                .map(|ivk| SaplingIvk(ivk))
+                .map(SaplingIvk)
                 .map_err(LedgerError::Ledger)?;
 
             let div = Self::get_default_div_from(&app, idx).await?;
@@ -654,7 +654,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
             .read()
             .await
             .get(&path.0)
-            .map(|k| k.clone());
+            .copied();
 
         match cached {
             Some(key) => Ok(key),
@@ -711,7 +711,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
                     .app
                     .get_ivk(path[2])
                     .await
-                    .map(|ivk| SaplingIvk(ivk))?;
+                    .map(SaplingIvk)?;
 
                 let div = self.get_default_div(path[2]).await?;
 
@@ -806,7 +806,7 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
         note: Note,
         merkle_path: MerklePath<Node>,
     ) -> Result<&mut Self, Self::Error> {
-        let path = self.lookup_shielded_from_ivk(&key)?;
+        let path = self.lookup_shielded_from_ivk(key)?;
 
         self.inner
             .add_sapling_spend(path[2], diversifier, note, merkle_path)?;

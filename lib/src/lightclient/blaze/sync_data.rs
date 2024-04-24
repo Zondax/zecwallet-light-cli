@@ -11,7 +11,7 @@ use crate::grpc::TreeState;
 use crate::lightclient::config::LightClientConfig;
 use crate::lightclient::MERKLE_DEPTH;
 use crate::lightwallet::data::blockdata::BlockData;
-use crate::lightwallet::options::WalletOptions;
+use crate::lightwallet::data::options::WalletOptions;
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,

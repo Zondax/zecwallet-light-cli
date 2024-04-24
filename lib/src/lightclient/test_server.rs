@@ -215,24 +215,20 @@ impl<P: consensus::Parameters> TestServerData<P> {
             panic!("No blocks");
         }
 
-        if cbs.len() > 1 {
-            if cbs.first().unwrap().height < cbs.last().unwrap().height {
-                panic!(
-                    "Blocks are in the wrong order. First={} Last={}",
-                    cbs.first().unwrap().height,
-                    cbs.last().unwrap().height
-                );
-            }
+        if cbs.len() > 1 && cbs.first().unwrap().height < cbs.last().unwrap().height {
+            panic!(
+                "Blocks are in the wrong order. First={} Last={}",
+                cbs.first().unwrap().height,
+                cbs.last().unwrap().height
+            );
         }
 
-        if !self.blocks.is_empty() {
-            if self.blocks.first().unwrap().height + 1 != cbs.last().unwrap().height {
-                panic!(
-                    "New blocks are in wrong order. expecting={}, got={}",
-                    self.blocks.first().unwrap().height + 1,
-                    cbs.last().unwrap().height
-                );
-            }
+        if !self.blocks.is_empty() && self.blocks.first().unwrap().height + 1 != cbs.last().unwrap().height {
+            panic!(
+                "New blocks are in wrong order. expecting={}, got={}",
+                self.blocks.first().unwrap().height + 1,
+                cbs.last().unwrap().height
+            );
         }
 
         for blk in cbs.into_iter().rev() {
@@ -319,19 +315,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
 
         let blocks = self.data.read().await.blocks.clone();
         tokio::spawn(async move {
-            let (iter, min, max) = if rev {
-                (
-                    blocks
-                        .iter()
-                        .rev()
-                        .map(|b| b.clone())
-                        .collect(),
-                    start,
-                    end,
-                )
-            } else {
-                (blocks, end, start)
-            };
+            let (iter, min, max) =
+                if rev { (blocks.iter().rev().cloned().collect(), start, end) } else { (blocks, end, start) };
             for b in iter {
                 if b.height >= min && b.height <= max {
                     Self::wait_random().await;

@@ -28,7 +28,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for HeightComm
         lightclient: &LightClient<P>,
     ) -> String {
         RT.block_on(async move {
-            format!("{}", object! { "height" => lightclient.wallet.last_scanned_height().await}.pretty(2))
+            object! { "height" => lightclient.wallet.last_scanned_height().await}
+                .pretty(2)
+                .to_string()
         })
     }
 }

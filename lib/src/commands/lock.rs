@@ -31,7 +31,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for LockComman
         args: &[&str],
         lightclient: &LightClient<P>,
     ) -> String {
-        if args.len() != 0 {
+        if !args.is_empty() {
             let mut h = vec![];
             h.push("Extra arguments to lock. Did you mean 'encrypt'?");
             h.push("");

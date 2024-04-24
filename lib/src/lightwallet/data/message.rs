@@ -41,7 +41,7 @@ impl Message {
     }
 
     fn magic_word() -> String {
-        return "ZcashOfflineMemo".to_string();
+        "ZcashOfflineMemo".to_string()
     }
 
     // Internal method that does the actual encryption
@@ -143,7 +143,7 @@ impl Message {
         let mut magic_word_bytes = vec![0u8; Message::magic_word().len()];
         reader.read_exact(&mut magic_word_bytes)?;
         let read_magic_word = String::from_utf8(magic_word_bytes)
-            .map_err(|e| return io::Error::new(ErrorKind::InvalidData, format!("{}", e)))?;
+            .map_err(|e| io::Error::new(ErrorKind::InvalidData, format!("{}", e)))?;
         if read_magic_word != Message::magic_word() {
             return Err(io::Error::new(
                 ErrorKind::InvalidData,
@@ -160,20 +160,20 @@ impl Message {
         reader.read_exact(&mut cmu_bytes)?;
         let cmu = bls12_381::Scalar::from_bytes(&cmu_bytes);
         if cmu.is_none().into() {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Can't read CMU bytes")));
+            return Err(io::Error::new(ErrorKind::InvalidData, "Can't read CMU bytes".to_string()));
         }
 
         let mut epk_bytes = [0u8; 32];
         reader.read_exact(&mut epk_bytes)?;
         let epk = jubjub::ExtendedPoint::from_bytes(&epk_bytes);
         if epk.is_none().into() {
-            return Err(io::Error::new(ErrorKind::InvalidData, format!("Can't read EPK bytes")));
+            return Err(io::Error::new(ErrorKind::InvalidData, "Can't read EPK bytes".to_string()));
         }
 
         let mut enc_bytes = [0u8; ENC_CIPHERTEXT_SIZE];
         reader.read_exact(&mut enc_bytes)?;
 
-        match try_sapling_note_decryption(&MAIN_NETWORK, BlockHeight::from_u32(1_500_000), &ivk, &OutputDescription {
+        match try_sapling_note_decryption(&MAIN_NETWORK, BlockHeight::from_u32(1_500_000), ivk, &OutputDescription {
             cmu: cmu.unwrap(),
             ephemeral_key: EphemeralKeyBytes::from(epk_bytes),
             enc_ciphertext: enc_bytes,
@@ -184,9 +184,9 @@ impl Message {
             Some((_note, address, memo)) => Ok(Self::new(
                 address,
                 memo.try_into()
-                    .map_err(|_e| io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt")))?,
+                    .map_err(|_e| io::Error::new(ErrorKind::InvalidData, "Failed to decrypt".to_string()))?,
             )),
-            None => Err(io::Error::new(ErrorKind::InvalidData, format!("Failed to decrypt"))),
+            None => Err(io::Error::new(ErrorKind::InvalidData, "Failed to decrypt".to_string())),
         }
     }
 }
@@ -342,7 +342,7 @@ pub mod tests {
         // Bad payload 3
         let c = enc.clone();
         let (bad_enc, _) = c.split_at(bad_enc.len() - 1);
-        let dec_success = Message::decrypt(&bad_enc, &ivk);
+        let dec_success = Message::decrypt(bad_enc, &ivk);
         assert!(dec_success.is_err());
 
         // Bad payload 4

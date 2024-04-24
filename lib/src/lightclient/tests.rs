@@ -486,7 +486,7 @@ async fn multiple_incoming_same_tx() {
 
         let note = Note {
             g_d: to.diversifier().g_d().unwrap(),
-            pk_d: to.pk_d().clone(),
+            pk_d: *to.pk_d(),
             value,
             rseed: Rseed::AfterZip212(rseed_bytes),
         };
@@ -500,7 +500,7 @@ async fn multiple_incoming_same_tx() {
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
-        let cv = ValueCommitment { value, randomness: rcv.clone() };
+        let cv = ValueCommitment { value, randomness: rcv };
 
         let cmu = note.cmu();
         let od = OutputDescription {
@@ -1269,7 +1269,7 @@ async fn mixed_txn() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == EXT_ZADDR && j["value"].as_u64().unwrap() == sent_zvalue)
+            .find(|j| j["address"] == EXT_ZADDR && j["value"].as_u64().unwrap() == sent_zvalue)
             .unwrap()["memo"]
             .to_string(),
         sent_zmemo
@@ -1277,7 +1277,7 @@ async fn mixed_txn() {
     assert_eq!(
         list[2]["outgoing_metadata"]
             .members()
-            .find(|j| j["address"].to_string() == EXT_TADDR)
+            .find(|j| j["address"] == EXT_TADDR)
             .unwrap()["value"]
             .as_u64()
             .unwrap(),
@@ -1362,7 +1362,7 @@ async fn aborted_resync() {
         ))
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();
@@ -1399,7 +1399,7 @@ async fn aborted_resync() {
         ))
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();
@@ -1561,7 +1561,7 @@ async fn recover_at_checkpoint() {
             .read()
             .await
             .first()
-            .map(|b| b.clone())
+            .cloned()
             .unwrap()
             .height,
         1220110
@@ -1590,7 +1590,7 @@ async fn recover_at_checkpoint() {
             .read()
             .await
             .first()
-            .map(|b| b.clone())
+            .cloned()
             .unwrap()
             .height,
         1220110
@@ -1663,7 +1663,7 @@ async fn witness_clearing() {
         .get(&tx.txid())
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();
@@ -1684,7 +1684,7 @@ async fn witness_clearing() {
         .get(&tx.txid())
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();
@@ -1701,7 +1701,7 @@ async fn witness_clearing() {
         .get(&tx.txid())
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();
@@ -1718,7 +1718,7 @@ async fn witness_clearing() {
         .get(&tx.txid())
         .unwrap()
         .s_notes
-        .get(0)
+        .first()
         .unwrap()
         .witnesses
         .clone();

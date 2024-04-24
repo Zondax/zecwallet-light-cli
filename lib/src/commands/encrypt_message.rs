@@ -33,14 +33,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptMes
         args: &[&str],
         lightclient: &LightClient<P>,
     ) -> String {
-        if args.len() < 1 || args.len() > 3 {
+        if args.is_empty() || args.len() > 3 {
             return Command::<P>::help(self);
         }
 
         // Check for a single argument that can be parsed as JSON
         let (to, memo) = if args.len() == 1 {
             let arg_list = args[0];
-            let j = match json::parse(&arg_list) {
+            let j = match json::parse(arg_list) {
                 Ok(j) => j,
                 Err(e) => {
                     let es = format!("Couldn't understand JSON: {}", e);
@@ -49,7 +49,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptMes
             };
 
             if !j.has_key("address") || !j.has_key("memo") {
-                let es = format!("Need 'address' and 'memo'\n");
+                let es = "Need 'address' and 'memo'\n".to_string();
                 return format!("{}\n{}", es, Command::<P>::help(self));
             }
 
@@ -81,7 +81,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for EncryptMes
                 .do_encrypt_message(to, m)
                 .pretty(2)
         } else {
-            return format!("Couldn't encode memo");
+            "Couldn't encode memo".to_string()
         }
     }
 }

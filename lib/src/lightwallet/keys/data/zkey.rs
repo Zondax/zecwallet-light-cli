@@ -38,6 +38,9 @@ pub struct WalletZKey {
 }
 
 impl WalletZKey {
+    fn serialized_version() -> u8 {
+        1
+    }
     pub fn new_hdkey(
         hdkey_num: u32,
         extsk: ExtendedSpendingKey,
@@ -114,10 +117,6 @@ impl WalletZKey {
         &self.extfvk
     }
 
-    fn serialized_version() -> u8 {
-        return 1;
-    }
-
     pub fn read<R: Read>(mut inp: R) -> io::Result<Self> {
         let version = inp.read_u8()?;
         assert!(version <= Self::serialized_version());
@@ -131,7 +130,7 @@ impl WalletZKey {
 
         let locked = inp.read_u8()? > 0;
 
-        let extsk = Optional::read(&mut inp, |r| ExtendedSpendingKey::read(r))?;
+        let extsk = Optional::read(&mut inp, ExtendedSpendingKey::read)?;
         let extfvk = ExtendedFullViewingKey::read(&mut inp)?;
         let zaddress = extfvk.default_address().1;
 
@@ -153,7 +152,7 @@ impl WalletZKey {
 
         out.write_u8(self.locked as u8)?;
 
-        Optional::write(&mut out, self.extsk.as_ref(), |w, sk| ExtendedSpendingKey::write(&sk, w))?;
+        Optional::write(&mut out, self.extsk.as_ref(), |w, sk| ExtendedSpendingKey::write(sk, w))?;
 
         ExtendedFullViewingKey::write(&self.extfvk, &mut out)?;
 
@@ -201,7 +200,7 @@ impl WalletZKey {
         match self.keytype {
             WalletZKeyType::HdKey => {
                 let (extsk, extfvk, address) =
-                    InMemoryKeys::<P>::get_zaddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
+                    InMemoryKeys::<P>::get_zaddr_from_bip39seed(config, bip39_seed, self.hdkey_num.unwrap());
 
                 if address != self.zaddress {
                     return Err(Error::new(
@@ -226,8 +225,8 @@ impl WalletZKey {
             },
             WalletZKeyType::ImportedSpendingKey => {
                 // For imported keys, we need to decrypt from the encrypted key
-                let nonce = secretbox::Nonce::from_slice(&self.nonce.as_ref().unwrap()).unwrap();
-                let extsk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
+                let nonce = secretbox::Nonce::from_slice(self.nonce.as_ref().unwrap()).unwrap();
+                let extsk_bytes = match secretbox::open(self.enc_key.as_ref().unwrap(), &nonce, key) {
                     Ok(s) => s,
                     Err(_) => {
                         return Err(Error::new(ErrorKind::InvalidData, "Decryption failed. Is your password correct?"));
@@ -264,7 +263,7 @@ impl WalletZKey {
                     .unwrap()
                     .write(&mut sk_bytes)?;
 
-                self.enc_key = Some(secretbox::seal(&sk_bytes, &nonce, &key));
+                self.enc_key = Some(secretbox::seal(&sk_bytes, &nonce, key));
                 self.nonce = Some(nonce.as_ref().to_vec());
             },
             WalletZKeyType::ImportedViewKey => {

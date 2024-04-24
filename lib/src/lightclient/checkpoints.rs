@@ -110,7 +110,7 @@ fn find_checkpoint(
         Some(closest_height) => chkpts
             .iter()
             .find(|(h, _, _)| *h == closest_height)
-            .map(|t| *t),
+            .copied(),
         None => None,
     }
 }
@@ -120,7 +120,7 @@ fn get_first_lower_than(
     heights: Vec<u64>,
 ) -> Option<u64> {
     // If it's before the first checkpoint, return None.
-    if heights.len() == 0 || height < heights[0] {
+    if heights.is_empty() || height < heights[0] {
         return None;
     }
 

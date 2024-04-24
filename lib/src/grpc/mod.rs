@@ -472,7 +472,7 @@ impl GrpcConnector {
         let send_response = response.into_inner();
         if send_response.error_code == 0 {
             let mut txid = send_response.error_message;
-            if txid.starts_with("\"") && txid.ends_with("\"") {
+            if txid.starts_with('"') && txid.ends_with('"') {
                 txid = txid[1 .. txid.len() - 1].to_string();
             }
 

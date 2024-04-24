@@ -74,6 +74,8 @@ mod ledger;
 #[cfg(feature = "ledger-support")]
 pub use ledger::LedgerKeystore;
 
+pub mod data;
+pub mod extended_key;
 mod in_memory;
 pub(crate) mod keystores;
 pub(crate) mod utils;

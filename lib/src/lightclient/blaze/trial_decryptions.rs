@@ -20,20 +20,21 @@ use zcash_primitives::{
 };
 
 use super::sync_data::BlazeSyncData;
+use crate::grpc::CompactBlock;
+use crate::lightwallet::data::options::MemoDownloadOption;
 use crate::lightwallet::data::wallettx::WalletTx;
+use crate::lightwallet::data::wallettxs::WalletTxs;
 use crate::lightwallet::keys::keystores::Keystores;
-use crate::lightwallet::options::MemoDownloadOption;
-use crate::{grpc::CompactBlock, lightwallet::wallet_txns::WalletTxns};
 
 pub struct TrialDecryptions<P> {
     keys: Arc<RwLock<Keystores<P>>>,
-    wallet_txns: Arc<RwLock<WalletTxns>>,
+    wallet_txns: Arc<RwLock<WalletTxs>>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
     pub fn new(
         keys: Arc<RwLock<Keystores<P>>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
     ) -> Self {
         Self { keys, wallet_txns }
     }
@@ -119,7 +120,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             Ok(())
         });
 
-        return (h, tx);
+        (h, tx)
     }
 
     async fn trial_decrypt_batch(
@@ -128,7 +129,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         bsync_data: Arc<RwLock<BlazeSyncData>>,
         s_ivks: Arc<Vec<SaplingIvk>>,
         o_ivks: Arc<Vec<IncomingViewingKey>>,
-        wallet_txns: Arc<RwLock<WalletTxns>>,
+        wallet_txns: Arc<RwLock<WalletTxs>>,
         detected_txid_sender: Sender<(TxId, Option<sapling::Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> Result<(), String> {
@@ -155,9 +156,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
 
                 // If the epk or ciphertext is missing, that means this was a spam Tx, so we
                 // can't decrypt it
-                if ctx.actions.len() > 0
-                    && ctx.actions[0].ciphertext.len() > 0
-                    && ctx.actions[0].ephemeral_key.len() > 0
+                if !ctx.actions.is_empty()
+                    && !ctx.actions[0].ciphertext.is_empty()
+                    && !ctx.actions[0].ephemeral_key.is_empty()
                 {
                     // Orchard
                     let orchard_actions = ctx
@@ -228,7 +229,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
 
                 // If the epk or ciphertext is missing, that means this was a spam Tx, so we
                 // can't decrypt it
-                if ctx.outputs.len() > 0 && ctx.outputs[0].epk.len() > 0 && ctx.outputs[0].ciphertext.len() > 0 {
+                if !ctx.outputs.is_empty() && !ctx.outputs[0].epk.is_empty() && !ctx.outputs[0].ciphertext.is_empty() {
                     // Sapling
                     let outputs_total = ctx.outputs.len();
                     // if outputs_total < 100 {
@@ -280,7 +281,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                                     .write()
                                     .await
                                     .add_new_sapling_note(
-                                        txid.clone(),
+                                        txid,
                                         height,
                                         false,
                                         timestamp,

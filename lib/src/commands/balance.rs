@@ -26,6 +26,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for BalanceCom
         _args: &[&str],
         lightclient: &LightClient<P>,
     ) -> String {
-        RT.block_on(async move { format!("{}", lightclient.do_balance().await.pretty(2)) })
+        RT.block_on(async move {
+            lightclient
+                .do_balance()
+                .await
+                .pretty(2)
+                .to_string()
+        })
     }
 }

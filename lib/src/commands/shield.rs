@@ -31,7 +31,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for ShieldComm
         lightclient: &LightClient<P>,
     ) -> String {
         // Parse the address or amount
-        let address = if args.len() > 0 { Some(args[0].to_string()) } else { None };
+        let address = if !args.is_empty() { Some(args[0].to_string()) } else { None };
         RT.block_on(async move {
             match lightclient.do_shield(address).await {
                 Ok(txid) => {
