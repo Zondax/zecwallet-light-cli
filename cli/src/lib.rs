@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use log::{error, info};
 use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
-use zecwalletlitelib::{commands, lightclient::LightClient};
-use zecwalletlitelib::{MainNetwork, Parameters};
+use zecwalletlitelib::lightclient::LightClient;
+use zecwalletlitelib::{do_user_command, MainNetwork, Parameters};
 
 pub mod version;
 
@@ -120,7 +120,7 @@ pub fn startup(
 
     // At startup, run a sync.
     if first_sync {
-        let update = commands::do_user_command("sync", &vec![], lightclient.as_ref());
+        let update = do_user_command("sync", &vec![], lightclient.as_ref());
         if print_updates {
             println!("{}", update);
         }
@@ -239,7 +239,7 @@ pub fn command_loop<P: Parameters + Send + Sync + 'static>(
                     .map(|s| s.as_ref())
                     .collect();
 
-                let cmd_response = commands::do_user_command(&cmd, &args, lc.as_ref());
+                let cmd_response = do_user_command(&cmd, &args, lc.as_ref());
                 resp_tx.send(cmd_response).unwrap();
 
                 if cmd == "quit" {

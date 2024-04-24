@@ -2,11 +2,13 @@
 extern crate rust_embed;
 
 pub mod blaze;
-pub mod commands;
 pub mod compact_formats;
 pub mod grpc_connector;
 pub mod lightclient;
 pub mod lightwallet;
+mod commands;
+
+pub use commands::do_user_command;
 
 #[cfg(feature = "embed_params")]
 #[derive(RustEmbed)]
@@ -18,6 +20,13 @@ pub struct SaplingParams;
 pub struct ServerCert;
 
 pub use zcash_primitives::consensus::{MainNetwork, Parameters};
+
+use lazy_static::lazy_static;
+use tokio::runtime::Runtime;
+
+lazy_static! {
+    static ref RT: Runtime = tokio::runtime::Runtime::new().unwrap();
+}
 
 // pub mod blaze;
 // pub mod compact_formats;
