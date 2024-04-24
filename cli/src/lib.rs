@@ -3,7 +3,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use log::{error, info};
-use zecwalletlitelib::lightclient::lightclient_config::LightClientConfig;
+use zecwalletlitelib::lightclient::config::LightClientConfig;
 use zecwalletlitelib::lightclient::LightClient;
 use zecwalletlitelib::{do_user_command, MainNetwork, Parameters};
 

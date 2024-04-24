@@ -26,7 +26,7 @@ use super::Keystore;
 #[cfg(feature = "ledger-support")]
 use crate::lightwallet::keys::ledger::{LedgerBuilder, LedgerError, LedgerKeystore};
 use crate::{
-    lightclient::lightclient_config::LightClientConfig,
+    lightclient::config::LightClientConfig,
     lightwallet::keys::{
         in_memory::{InMemoryBuilder, InMemoryBuilderError, InMemoryKeys},
         Builder, SaplingMetadata, ToBase58Check, TxProver,

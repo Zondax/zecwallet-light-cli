@@ -29,13 +29,14 @@ use zcash_primitives::transaction::{Transaction, TransactionData};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use super::checkpoints;
-use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
-use crate::compacting::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::compacting::{CompactSaplingOutput, CompactTx, Empty};
+use super::config::{LightClientConfig, UnitTestNetwork};
+use crate::grpc::compact_tx_streamer_client::CompactTxStreamerClient;
+use crate::grpc::CompactSaplingOutput;
+use crate::grpc::{CompactTx, Empty};
 use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
 use crate::lightclient::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};
-use crate::lightclient::faketx::new_transactiondata;
 use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
+use crate::lightclient::test_utils::new_transactiondata;
 use crate::lightclient::LightClient;
 use crate::lightwallet::data::WalletTx;
 

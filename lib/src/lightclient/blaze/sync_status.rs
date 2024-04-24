@@ -66,11 +66,8 @@ impl SyncStatus {
         num: u64,
     ) -> u8 {
         let a = if self.blocks_total > 0 {
-            let (b, d) = if self.batch_total > 0 {
-                ((self.batch_num * 100 / self.batch_total), self.batch_total)
-            } else {
-                (0, 1)
-            };
+            let (b, d) =
+                if self.batch_total > 0 { (self.batch_num * 100 / self.batch_total, self.batch_total) } else { (0, 1) };
             let p = cmp::min(((num * 100) / self.blocks_total) as u8, 100);
             b + (p as usize / d)
         } else {

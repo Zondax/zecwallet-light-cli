@@ -17,12 +17,12 @@ use tonic::{
 use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::transaction::{Transaction, TxId};
 
-use crate::compacting::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::compacting::{
-    BlockId, BlockRange, ChainSpec, CompactBlock, Empty, LightdInfo, PriceRequest, PriceResponse, RawTransaction,
-    TransparentAddressBlockFilter, TreeState, TxFilter,
-};
+pub use self::types::*;
+use crate::grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use crate::ServerCert;
+
+pub mod extensions;
+pub mod types;
 
 #[derive(Clone)]
 pub struct GrpcConnector {
@@ -115,7 +115,7 @@ impl GrpcConnector {
                     )));
                 }
 
-                // Dispatch a set of recievers
+                // Dispatch a set of receivers
                 result_tx.send(tx_rs).unwrap();
 
                 // Wait for all the t-addr transactions to be fetched from LightwalletD and sent
@@ -194,7 +194,7 @@ impl GrpcConnector {
             .map_err(|e| format!("{}", e))?
             .into_inner();
 
-        // First download all blocks and save them locally, so we don't timeout
+        // First download all blocks and save them locally, so we don't time out
         let mut block_cache = Vec::new();
 
         while let Some(block) = response.message().await.map_err(|e| {
@@ -204,7 +204,7 @@ impl GrpcConnector {
             block_cache.push(block);
         }
 
-        // Send all the blocks to the recievers
+        // Send all the blocks to the receivers
         for block in block_cache {
             // println!("grpc connector Sent {}", block.height);
             receivers[0]
@@ -363,7 +363,7 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("Error getting client: {:?}", e))?;
 
-        let b = BlockId { height: height as u64, hash: vec![] };
+        let b = BlockId { height, hash: vec![] };
         let response = client
             .get_tree_state(Request::new(b))
             .await
@@ -413,7 +413,7 @@ impl GrpcConnector {
                     Err(e) => {
                         // If the server doesn't support this, bail
                         if e.code() == tonic::Code::Unimplemented {
-                            return Err(format!("Unsupported by server"));
+                            return Err("Unsupported by server".to_string());
                         }
 
                         // Ignore other errors, these are probably just for the particular date/time
@@ -468,16 +468,16 @@ impl GrpcConnector {
             .await
             .map_err(|e| format!("Send Error: {}", e))?;
 
-        let sendresponse = response.into_inner();
-        if sendresponse.error_code == 0 {
-            let mut txid = sendresponse.error_message;
+        let send_response = response.into_inner();
+        if send_response.error_code == 0 {
+            let mut txid = send_response.error_message;
             if txid.starts_with("\"") && txid.ends_with("\"") {
                 txid = txid[1 .. txid.len() - 1].to_string();
             }
 
             Ok(txid)
         } else {
-            Err(format!("Error: {:?}", sendresponse))
+            Err(format!("Error: {:?}", send_response))
         }
     }
 }

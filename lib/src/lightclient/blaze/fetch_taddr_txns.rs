@@ -13,7 +13,7 @@ use zcash_primitives::{
     transaction::Transaction,
 };
 
-use crate::compacting::RawTransaction;
+use crate::grpc::RawTransaction;
 use crate::lightwallet::keys::Keystores;
 
 pub struct FetchTaddrTxns<P> {
@@ -163,9 +163,9 @@ mod test {
     use zcash_primitives::transaction::Transaction;
 
     use super::FetchTaddrTxns;
-    use crate::compacting::RawTransaction;
-    use crate::lightclient::faketx;
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
+    use crate::grpc::RawTransaction;
+    use crate::lightclient::config::UnitTestNetwork;
+    use crate::lightclient::test_utils;
     use crate::lightwallet::keys::InMemoryKeys;
     use crate::lightwallet::wallettkey::WalletTKey;
 
@@ -215,7 +215,7 @@ mod test {
                             rtx.height = h;
 
                             let mut b = vec![];
-                            faketx::new_transactiondata()
+                            test_utils::new_transactiondata()
                                 .freeze()
                                 .unwrap()
                                 .write(&mut b)
@@ -265,8 +265,8 @@ mod test {
             .start(100, 1, taddr_fetcher_tx, full_tx_scanner_tx, UnitTestNetwork)
             .await;
 
-        let (total_sent, total_recieved) = join!(h1, h2);
-        assert_eq!(total_sent.unwrap().unwrap(), total_recieved.unwrap().unwrap());
+        let (total_sent, total_received) = join!(h1, h2);
+        assert_eq!(total_sent.unwrap().unwrap(), total_received.unwrap().unwrap());
 
         h3.await.unwrap().unwrap();
     }

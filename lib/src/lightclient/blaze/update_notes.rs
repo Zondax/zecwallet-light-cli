@@ -15,7 +15,7 @@ use super::syncdata::BlazeSyncData;
 use crate::lightwallet::MemoDownloadOption;
 use crate::lightwallet::{data::WalletTx, wallet_txns::WalletTxns};
 
-/// A processor to update notes that we have recieved in the wallet.
+/// A processor to update notes that we have received in the wallet.
 /// We need to identify if this note has been spent in future blocks.
 /// If YES, then:
 ///    - Mark this note as spent
@@ -136,7 +136,7 @@ impl UpdateNotes {
         let h1 = tokio::spawn(async move {
             let mut workers = FuturesUnordered::new();
 
-            // Recieve Txns that are sent to the wallet. We need to update the notes for
+            // Receive Txns that are sent to the wallet. We need to update the notes for
             // this.
             while let Some((txid, nf, at_height, output_num)) = rx.recv().await {
                 let bsync_data = bsync_data.clone();
@@ -172,7 +172,7 @@ impl UpdateNotes {
                                 .await
                                 .mark_txid_s_nf_spent(&txid, &nf, &spent_txid, spent_at_height);
 
-                            // Record the future tx, the one that has spent the nullifiers recieved in this
+                            // Record the future tx, the one that has spent the nullifiers received in this
                             // Tx in the wallet
                             wallet_txns
                                 .write()

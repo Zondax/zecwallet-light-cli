@@ -21,7 +21,7 @@ use zcash_primitives::{
     constants::{self},
 };
 
-use crate::{grpc_connector::GrpcConnector, lightclient::checkpoints};
+use crate::{grpc::GrpcConnector, lightclient::checkpoints};
 
 pub const DEFAULT_SERVER: &str = "https://lwdv3.zecwallet.co";
 pub const WALLET_NAME: &str = "zecwallet-light-wallet.dat";
@@ -128,14 +128,14 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                     format!("{}:{}", server.host().unwrap(), server.port().unwrap())
                         .to_socket_addrs()?
                         .next()
-                        .ok_or(std::io::Error::new(ErrorKind::ConnectionRefused, "Couldn't resolve server!"))?;
+                        .ok_or(Error::new(ErrorKind::ConnectionRefused, "Couldn't resolve server!"))?;
 
                     // Do a getinfo first, before opening the wallet
                     let info = GrpcConnector::get_info(server.clone())
                         .await
-                        .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+                        .map_err(|e| Error::new(ErrorKind::ConnectionRefused, e))?;
 
-                    Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
+                    Ok::<_, Error>((info.chain_name, info.sapling_activation_height, info.block_height))
                 })
         {
             // Create a Light Client Config
@@ -151,8 +151,8 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
 
             Ok((config, block_height))
         } else {
-            return Err(io::Error::new(
-                io::ErrorKind::ConnectionRefused,
+            return Err(Error::new(
+                ErrorKind::ConnectionRefused,
                 "Couldn't get network from server, connection refused. Is the server address correct?".to_string(),
             ));
         }
@@ -253,7 +253,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
         } else {
             if dirs::home_dir().is_none() {
-                return Err(io::Error::new(io::ErrorKind::InvalidData, "Couldn't determine Home Dir"));
+                return Err(Error::new(ErrorKind::InvalidData, "Couldn't determine Home Dir"));
             }
 
             let mut zcash_params = self

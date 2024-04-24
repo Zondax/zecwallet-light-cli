@@ -3,7 +3,7 @@ use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
 
 // Create a fake tx data
 pub fn new_transactiondata() -> TransactionData<Authorized> {
-    let td: TransactionData<zcash_primitives::transaction::Authorized> =
+    let td: TransactionData<Authorized> =
         TransactionData::from_parts(TxVersion::Sapling, BranchId::Sapling, 0, 0u32.into(), None, None, None, None);
 
     td
@@ -17,7 +17,7 @@ pub fn clone_transactiondata(
     let transparent_bundle =
         if t.transparent_bundle().is_some() { Some(t.transparent_bundle().unwrap().clone()) } else { None };
 
-    let td1: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
+    let td1: TransactionData<Authorized> = TransactionData::from_parts(
         TxVersion::Sapling,
         BranchId::Sapling,
         0,
@@ -28,7 +28,7 @@ pub fn clone_transactiondata(
         None,
     );
 
-    let td2: TransactionData<zcash_primitives::transaction::Authorized> = TransactionData::from_parts(
+    let td2: TransactionData<Authorized> = TransactionData::from_parts(
         TxVersion::Sapling,
         BranchId::Sapling,
         0,

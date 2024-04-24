@@ -31,7 +31,7 @@ use zx_bip44::BIP44Path;
 
 use super::{Builder, InMemoryKeys, Keystore, KeystoreBuilderLifetime, SaplingMetadata, TxProver};
 use crate::{
-    lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
+    lightclient::config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
     lightwallet::utils::compute_taddr,
 };
 

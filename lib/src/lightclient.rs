@@ -31,7 +31,7 @@ use zcash_primitives::{
     transaction::{components::amount::DEFAULT_FEE, Transaction, TxId},
 };
 
-use self::lightclient_config::LightClientConfig;
+use self::config::LightClientConfig;
 use crate::lightclient::blaze::block_witness_data::BlockAndWitnessData;
 use crate::lightclient::blaze::fetch_compact_blocks::FetchCompactBlocks;
 use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
@@ -41,11 +41,11 @@ use crate::lightclient::blaze::syncdata::BlazeSyncData;
 use crate::lightclient::blaze::trial_decryptions::TrialDecryptions;
 use crate::lightclient::blaze::update_notes::UpdateNotes;
 use crate::{
-    compacting::RawTransaction,
-    grpc_connector::GrpcConnector,
-    lightclient::lightclient_config::MAX_REORG,
+    grpc::GrpcConnector,
+    grpc::RawTransaction,
+    lightclient::config::MAX_REORG,
     lightwallet::{
-        self, data::WalletTx, keys::KeystoresKind, message::Message, now, LightWallet, MAX_CHECKPOINTS, MERKLE_DEPTH,
+        data::WalletTx, keys::KeystoresKind, message::Message, now, LightWallet, MAX_CHECKPOINTS, MERKLE_DEPTH,
     },
 };
 
@@ -58,7 +58,7 @@ cfg_if::cfg_if! {
 }
 
 pub(crate) mod checkpoints;
-pub mod lightclient_config;
+pub mod config;
 
 #[derive(Clone, Debug)]
 pub struct WalletStatus {
@@ -302,7 +302,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 // Save
                 l.do_save(true)
                     .await
-                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+                    .map_err(|s| Error::new(ErrorKind::PermissionDenied, s))?;
 
                 Ok(l)
             })
@@ -328,7 +328,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 } else {
                     let ks = LedgerKeystore::new(config.clone())
                         .await
-                        .map_err(|e| io::Error::new(ErrorKind::NotConnected, e))?;
+                        .map_err(|e| Error::new(ErrorKind::NotConnected, e))?;
 
                     LightWallet::with_keystore(config.clone(), latest_block, ks)
                 };
@@ -350,7 +350,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 // Save
                 l.do_save(true)
                     .await
-                    .map_err(|s| io::Error::new(ErrorKind::PermissionDenied, s))?;
+                    .map_err(|s| Error::new(ErrorKind::PermissionDenied, s))?;
 
                 Ok(l)
             })
@@ -386,7 +386,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             if !overwrite && config.wallet_exists() {
                 return Err(Error::new(
                     ErrorKind::AlreadyExists,
-                    format!("Cannot create a new wallet from seed, because a wallet already exists"),
+                    "Cannot create a new wallet from seed, because a wallet already exists".to_string(),
                 ));
             }
         }
@@ -400,7 +400,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .block_on(async move {
                     lc.do_import_key(seed_phrase, birthday)
                         .await
-                        .map_err(|e| io::Error::new(ErrorKind::InvalidData, e))?;
+                        .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
                     info!("Created wallet with 0 keys, imported private key");
 
@@ -498,7 +498,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     pub fn init_logging(&self) -> io::Result<()> {
         // Configure logging first.
         let log_config = self.config.get_log_config()?;
-        log4rs::init_config(log_config).map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
+        log4rs::init_config(log_config).map_err(|e| Error::new(ErrorKind::Other, e))?;
 
         Ok(())
     }
@@ -1518,7 +1518,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         {
             let mut p = self.wallet.price.write().await;
-            p.last_historical_prices_fetched_at = Some(lightwallet::now());
+            p.last_historical_prices_fetched_at = Some(now());
             p.historical_prices_retry_count += retry_count_increase;
         }
     }
@@ -2131,9 +2131,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     ) -> Result<String, String> {
         info!("Creating transaction");
 
+        use crate::lightclient::blaze::test_utils::FakeTxProver;
+
         let result = {
             let _lock = self.sync_lock.lock().await;
-            let prover = test_utils::FakeTxProver {};
+            let prover = FakeTxProver {};
 
             self.wallet
                 .send_to_address(prover, false, addrs, |txbytes| {
@@ -2154,4 +2156,4 @@ pub(crate) mod test_server;
 
 pub mod blaze;
 #[cfg(test)]
-pub(crate) mod faketx;
+pub(crate) mod test_utils;

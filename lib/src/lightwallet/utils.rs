@@ -9,7 +9,7 @@ use zcash_primitives::memo::MemoBytes;
 use crate::lightwallet::keys::ToBase58Check;
 
 pub fn read_string<R: Read>(mut reader: R) -> io::Result<String> {
-    // Strings are written as <littleendian> len + bytes
+    // Strings are written as <little endian> len + bytes
     let str_len = reader.read_u64::<LittleEndian>()?;
     let mut str_bytes = vec![0; str_len as usize];
     reader.read_exact(&mut str_bytes)?;
@@ -30,7 +30,7 @@ pub fn write_string<W: Write>(
 
 // Interpret a string or hex-encoded memo, and return a Memo object
 pub fn interpret_memo_string(memo_str: String) -> Result<MemoBytes, String> {
-    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+)
+    // If the string starts with "0x", and contains only hex chars ([a-f0-9]+)
     // then interpret it as a hex
     let s_bytes = if memo_str
         .to_lowercase()

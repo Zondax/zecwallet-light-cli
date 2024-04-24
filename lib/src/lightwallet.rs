@@ -53,13 +53,13 @@ use self::{
     message::Message,
     wallet_txns::WalletTxns,
 };
-use crate::compacting::TreeState;
+use crate::grpc::TreeState;
 use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::keys::{InMemoryKeys, Keystores};
 use crate::lightwallet::wallettkey::WalletTKey;
 use crate::{
-    lightclient::lightclient_config::LightClientConfig,
+    lightclient::config::LightClientConfig,
     lightwallet::{
         data::SpendableSaplingNote,
         walletzkey::{WalletZKey, WalletZKeyType},
@@ -2047,13 +2047,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 mod test {
     use zcash_primitives::transaction::components::Amount;
 
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
-    use crate::{
-        blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
-        lightclient::{
-            test_server::{create_test_server, mine_pending_blocks, mine_random_blocks},
-            LightClient,
-        },
+    use crate::lightclient::blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction};
+    use crate::lightclient::config::UnitTestNetwork;
+    use crate::lightclient::{
+        test_server::{create_test_server, mine_pending_blocks, mine_random_blocks},
+        LightClient,
     };
 
     #[tokio::test]

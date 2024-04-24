@@ -10,9 +10,8 @@ use zcash_primitives::{
     sapling::note_encryption::SaplingDomain,
 };
 
-use crate::helpers::vec_to_array;
-
-tonic::include_proto!("cash.z.wallet.sdk.rpc");
+use crate::grpc::types::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
+use crate::utils::vec_to_array;
 
 impl CompactBlock {
     /// Returns the [`BlockHash`] for this block.

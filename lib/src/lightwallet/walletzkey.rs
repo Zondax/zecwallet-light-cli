@@ -11,7 +11,7 @@ use zcash_primitives::{
 };
 
 use super::keys::InMemoryKeys;
-use crate::lightclient::lightclient_config::LightClientConfig;
+use crate::lightclient::config::LightClientConfig;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum WalletZKeyType {
@@ -29,7 +29,7 @@ pub struct WalletZKey {
     pub(super) extfvk: ExtendedFullViewingKey,
     pub(super) zaddress: PaymentAddress,
 
-    // If this is a HD key, what is the key number
+    // If this is an HD key, what is the key number
     pub(super) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here
@@ -126,7 +126,7 @@ impl WalletZKey {
             0 => Ok(WalletZKeyType::HdKey),
             1 => Ok(WalletZKeyType::ImportedSpendingKey),
             2 => Ok(WalletZKeyType::ImportedViewKey),
-            n => Err(io::Error::new(ErrorKind::InvalidInput, format!("Unknown zkey type {}", n))),
+            n => Err(Error::new(ErrorKind::InvalidInput, format!("Unknown zkey type {}", n))),
         }?;
 
         let locked = inp.read_u8()? > 0;
@@ -204,7 +204,7 @@ impl WalletZKey {
                     InMemoryKeys::<P>::get_zaddr_from_bip39seed(&config, &bip39_seed, self.hdkey_num.unwrap());
 
                 if address != self.zaddress {
-                    return Err(io::Error::new(
+                    return Err(Error::new(
                         ErrorKind::InvalidData,
                         format!(
                             "zaddress mismatch at {}. {:?} vs {:?}",
@@ -216,7 +216,7 @@ impl WalletZKey {
                 }
 
                 if extfvk != self.extfvk {
-                    return Err(io::Error::new(
+                    return Err(Error::new(
                         ErrorKind::InvalidData,
                         format!("fvk mismatch at {}. {:?} vs {:?}", self.hdkey_num.unwrap(), extfvk, self.extfvk),
                     ));
@@ -230,10 +230,7 @@ impl WalletZKey {
                 let extsk_bytes = match secretbox::open(&self.enc_key.as_ref().unwrap(), &nonce, &key) {
                     Ok(s) => s,
                     Err(_) => {
-                        return Err(io::Error::new(
-                            ErrorKind::InvalidData,
-                            "Decryption failed. Is your password correct?",
-                        ));
+                        return Err(Error::new(ErrorKind::InvalidData, "Decryption failed. Is your password correct?"));
                     },
                 };
 
@@ -311,7 +308,7 @@ pub mod tests {
     };
 
     use super::WalletZKey;
-    use crate::lightclient::lightclient_config::{LightClientConfig, UnitTestNetwork};
+    use crate::lightclient::config::{LightClientConfig, UnitTestNetwork};
 
     fn get_config() -> LightClientConfig<UnitTestNetwork> {
         LightClientConfig {

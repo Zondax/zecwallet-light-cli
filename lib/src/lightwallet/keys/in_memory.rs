@@ -21,7 +21,7 @@ use zcash_primitives::{
 };
 
 use crate::{
-    lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
+    lightclient::config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
     lightwallet::{
         keys::{double_sha256, InsecureKeystore, Keystore, KeystoreBuilderLifetime, ToBase58Check},
         utils,

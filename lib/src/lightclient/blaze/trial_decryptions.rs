@@ -21,7 +21,7 @@ use zcash_primitives::{
 
 use super::syncdata::BlazeSyncData;
 use crate::{
-    compacting::CompactBlock,
+    grpc::CompactBlock,
     lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
 };
 

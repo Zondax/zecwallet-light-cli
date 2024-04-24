@@ -20,16 +20,15 @@ use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
 
-use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
+use super::config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;
-use crate::blaze::test_utils::{orchardtree_to_string, tree_to_string, FakeCompactBlockList};
-use crate::compacting::compact_tx_streamer_server::CompactTxStreamer;
-use crate::compacting::compact_tx_streamer_server::CompactTxStreamerServer;
-use crate::compacting::{
+use crate::grpc::compact_tx_streamer_server::{CompactTxStreamer, CompactTxStreamerServer};
+use crate::grpc::{
     Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
     GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
     PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
 };
+use crate::lightclient::blaze::test_utils::{orchardtree_to_string, tree_to_string, FakeCompactBlockList};
 use crate::lightwallet::data::WalletTx;
 use crate::lightwallet::now;
 
@@ -593,7 +592,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         Self::wait_random().await;
 
         let mut ld = LightdInfo::default();
-        ld.version = format!("Test GRPC Server");
+        ld.version = "Test GRPC Server".to_string();
         ld.block_height = self
             .data
             .read()
@@ -632,8 +631,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
 
     async fn get_mempool_stream(
         &self,
-        _request: tonic::Request<crate::compacting::Empty>,
-    ) -> Result<tonic::Response<Self::GetMempoolStreamStream>, tonic::Status> {
+        _request: Request<Empty>,
+    ) -> Result<Response<Self::GetMempoolStreamStream>, tonic::Status> {
         todo!()
     }
 }

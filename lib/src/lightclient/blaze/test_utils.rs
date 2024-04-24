@@ -32,11 +32,11 @@ use zcash_primitives::{
 };
 use zcash_proofs::sapling::SaplingProvingContext;
 
+use crate::grpc::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx};
 use crate::{
-    compacting::{CompactBlock, CompactSaplingOutput, CompactSaplingSpend, CompactTx},
     lightclient::{
-        faketx::{clone_transactiondata, new_transactiondata},
         test_server::TestServerData,
+        test_utils::{clone_transactiondata, new_transactiondata},
     },
     lightwallet::{data::BlockData, keys::ToBase58Check},
 };

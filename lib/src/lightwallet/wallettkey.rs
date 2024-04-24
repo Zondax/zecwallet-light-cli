@@ -13,7 +13,7 @@ use super::{
     utils,
 };
 use crate::{
-    lightclient::lightclient_config::LightClientConfig,
+    lightclient::config::LightClientConfig,
     lightwallet::extended_key::{ExtendedPrivKey, KeyIndex},
 };
 
@@ -340,7 +340,7 @@ mod test {
     use secp256k1::SecretKey;
 
     use super::WalletTKey;
-    use crate::lightclient::lightclient_config::{LightClientConfig, UnitTestNetwork};
+    use crate::lightclient::config::{LightClientConfig, UnitTestNetwork};
 
     #[test]
     fn tkey_encode_decode() {

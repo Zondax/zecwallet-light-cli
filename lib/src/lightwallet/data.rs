@@ -22,7 +22,7 @@ use zcash_primitives::{
     zip32::ExtendedFullViewingKey,
 };
 
-use crate::compacting::CompactBlock;
+use crate::grpc::CompactBlock;
 use crate::lightclient::blaze::fixed_size_buffer::FixedSizeBuffer;
 
 #[derive(Clone)]

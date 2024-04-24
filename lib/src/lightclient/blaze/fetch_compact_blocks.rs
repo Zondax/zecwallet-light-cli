@@ -4,9 +4,7 @@ use log::info;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver};
 use zcash_primitives::consensus;
 
-use crate::{
-    compacting::CompactBlock, grpc_connector::GrpcConnector, lightclient::lightclient_config::LightClientConfig,
-};
+use crate::{grpc::CompactBlock, grpc::GrpcConnector, lightclient::config::LightClientConfig};
 
 pub struct FetchCompactBlocks<P> {
     config: LightClientConfig<P>,
@@ -35,7 +33,7 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
             let start = b;
             let end = max((b as i64) - (STEP as i64) + 1, end_block as i64) as u64;
             if start < end {
-                return Err(format!("Wrong block order"));
+                return Err("Wrong block order".to_string());
             }
 
             info!("Fetching blocks {}-{}", start, end);
@@ -58,15 +56,15 @@ impl<P: consensus::Parameters> FetchCompactBlocks<P> {
         mut reorg_rx: UnboundedReceiver<Option<u64>>,
     ) -> Result<(), String> {
         if start_block < end_block {
-            return Err(format!("Expected blocks in reverse order"));
+            return Err("Expected blocks in reverse order".to_string());
         }
 
         // info!("Starting fetch compact blocks");
         self.fetch_blocks_range(&receivers, start_block, end_block, spam_filter_threshold)
             .await?;
 
-        // After fetching all the normal blocks, we actually wait to see if any re-org'd
-        // blocks are recieved
+        // After fetching all the normal blocks, we actually wait to see if any re-org
+        // blocks are received
         while let Some(Some(reorg_block)) = reorg_rx.recv().await {
             // Fetch the additional block.
             self.fetch_blocks_range(&receivers, reorg_block, reorg_block, spam_filter_threshold)

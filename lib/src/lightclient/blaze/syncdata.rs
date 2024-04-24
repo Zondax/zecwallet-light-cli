@@ -7,9 +7,9 @@ use tokio::sync::RwLock;
 use zcash_primitives::consensus;
 
 use super::{block_witness_data::BlockAndWitnessData, sync_status::SyncStatus};
-use crate::compacting::TreeState;
+use crate::grpc::TreeState;
 use crate::lightwallet::{WalletOptions, MERKLE_DEPTH};
-use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
+use crate::{lightclient::config::LightClientConfig, lightwallet::data::BlockData};
 
 pub struct BlazeSyncData {
     pub(crate) sync_status: Arc<RwLock<SyncStatus>>,

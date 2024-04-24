@@ -102,7 +102,7 @@ fn find_checkpoint(
     // Find the closest checkpoint
     let mut heights = chkpts
         .iter()
-        .map(|(h, _, _)| *h as u64)
+        .map(|(h, _, _)| *h)
         .collect::<Vec<_>>();
     heights.sort();
 

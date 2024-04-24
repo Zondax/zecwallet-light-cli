@@ -79,7 +79,7 @@ impl ExtendedPrivKey {
         Ok(ExtendedPrivKey { private_key, chain_code: chain_code.to_vec() })
     }
 
-    fn sign_hardended_key(
+    fn sign_hardened_key(
         &self,
         index: u32,
     ) -> HmacOutput {
@@ -110,7 +110,7 @@ impl ExtendedPrivKey {
             return Err(Error::InvalidTweak);
         }
         let signature = match key_index {
-            KeyIndex::Hardened(index) => self.sign_hardended_key(index),
+            KeyIndex::Hardened(index) => self.sign_hardened_key(index),
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
         let sig_bytes = signature.into_bytes();

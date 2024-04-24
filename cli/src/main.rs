@@ -3,7 +3,7 @@ use zecwallet_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup, version::VERSION,
 };
 use zecwalletlitelib::{
-    lightclient::{self, lightclient_config::LightClientConfig},
+    lightclient::{self, config::LightClientConfig},
     MainNetwork,
 };
 

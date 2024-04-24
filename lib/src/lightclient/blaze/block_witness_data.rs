@@ -22,13 +22,13 @@ use zcash_primitives::{
 };
 
 use super::{fixed_size_buffer::FixedSizeBuffer, sync_status::SyncStatus};
-use crate::helpers::vec_to_array;
+use crate::utils::vec_to_array;
 use crate::{
-    compacting::{CompactBlock, CompactTx, TreeState},
-    grpc_connector::GrpcConnector,
+    grpc::GrpcConnector,
+    grpc::{CompactBlock, CompactTx, TreeState},
     lightclient::{
         checkpoints::get_all_main_checkpoints,
-        lightclient_config::{LightClientConfig, MAX_REORG},
+        config::{LightClientConfig, MAX_REORG},
     },
     lightwallet::{
         data::{BlockData, WalletTx, WitnessCache},
@@ -299,7 +299,7 @@ impl BlockAndWitnessData {
                         }
 
                         for i in (end_pos .. start_pos + 1).rev() {
-                            let cb = &blocks.get(i as usize).unwrap().cb();
+                            let cb = &blocks.get(i).unwrap().cb();
                             for ctx in &cb.vtx {
                                 for co in &ctx.outputs {
                                     let node = Node::new(co.cmu().unwrap().into());
@@ -531,7 +531,7 @@ impl BlockAndWitnessData {
                 .get_unspent_o_nullifiers();
 
             for i in (0 .. blocks.len()).rev() {
-                let cb = &blocks.get(i as usize).unwrap().cb();
+                let cb = &blocks.get(i).unwrap().cb();
 
                 // Checkpoint the orchard witness tree at the start of each block
                 orchard_witnesses.checkpoint();
@@ -876,9 +876,9 @@ mod test {
     use super::BlockAndWitnessData;
     use crate::lightclient::blaze::sync_status::SyncStatus;
     use crate::lightclient::blaze::test_utils::{FakeCompactBlock, FakeCompactBlockList};
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
+    use crate::lightclient::config::UnitTestNetwork;
     use crate::lightwallet::wallet_txns::WalletTxns;
-    use crate::{lightclient::lightclient_config::LightClientConfig, lightwallet::data::BlockData};
+    use crate::{lightclient::config::LightClientConfig, lightwallet::data::BlockData};
 
     #[tokio::test]
     async fn setup_finish_simple() {
@@ -955,7 +955,7 @@ mod test {
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
-                return Err(format!("Should not have requested a reorg!"));
+                return Err("Should not have requested a reorg!".to_string());
             }
             Ok(())
         });
@@ -1003,7 +1003,7 @@ mod test {
                     .map_err(|e| format!("Couldn't send block: {}", e))?;
             }
             if let Some(Some(_h)) = reorg_rx.recv().await {
-                return Err(format!("Should not have requested a reorg!"));
+                return Err("Should not have requested a reorg!".to_string());
             }
             Ok(())
         });

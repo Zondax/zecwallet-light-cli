@@ -137,7 +137,7 @@ pub mod tests {
 
     use crate::commands::do_user_command;
     use crate::lightclient::{
-        lightclient_config::{LightClientConfig, UnitTestNetwork},
+        config::{LightClientConfig, UnitTestNetwork},
         LightClient,
     };
 

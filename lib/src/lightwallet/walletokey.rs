@@ -22,7 +22,7 @@ pub struct WalletOKey {
     pub(crate) fvk: FullViewingKey,
     pub(crate) unified_address: UnifiedAddress,
 
-    // If this is a HD key, what is the key number
+    // If this is an HD key, what is the key number
     pub(crate) hdkey_num: Option<u32>,
 
     // If locked, the encrypted private key is stored here

@@ -30,7 +30,7 @@ use zcash_primitives::{
 
 use super::syncdata::BlazeSyncData;
 use crate::{
-    lightclient::lightclient_config::LightClientConfig,
+    lightclient::config::LightClientConfig,
     lightwallet::{
         data::OutgoingTxMetadata,
         keys::{Keystores, ToBase58Check},
