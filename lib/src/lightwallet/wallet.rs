@@ -883,7 +883,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         },
                         None => true,
                     })
-                    .map(|nd| if nd.spent.is_none() && nd.unconfirmed_spent.is_none() { nd.note.value } else { 0 })
+                    .map(|nd| if nd.spent.is_none() && nd.unconfirmed_spent.is_none() { nd.note.value().inner() } else { 0 })
                     .sum::<u64>()
             })
             .sum::<u64>()

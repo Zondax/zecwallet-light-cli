@@ -24,7 +24,7 @@ use zcash_primitives::{
         redjubjub::{self, Signature},
         Node,
     },
-    sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, ValueCommitment},
+    sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, value::ValueCommitment},
     transaction::{
         components::{sapling, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Authorized, Transaction, TransactionData, TxId,

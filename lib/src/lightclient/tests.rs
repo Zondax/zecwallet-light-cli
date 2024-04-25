@@ -21,7 +21,7 @@ use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::redjubjub::Signature;
 use zcash_primitives::sapling::Node;
-use zcash_primitives::sapling::{Note, Rseed, ValueCommitment};
+use zcash_primitives::sapling::{Note, Rseed, value::ValueCommitment};
 use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::transaction::components::{sapling, Amount};
 use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};

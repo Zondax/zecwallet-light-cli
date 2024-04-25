@@ -18,7 +18,7 @@ use zcash_primitives::{
     memo::Memo,
     sapling::{
         note_encryption::{prf_ock, try_sapling_note_decryption, SaplingDomain},
-        PaymentAddress, Rseed, SaplingIvk, ValueCommitment,
+        PaymentAddress, Rseed, SaplingIvk, value::ValueCommitment,
     },
     transaction::components::{OutputDescription, GROTH_PROOF_SIZE},
 };

@@ -16,6 +16,7 @@ use zcash_primitives::{
         Transaction,
     },
 };
+use zcash_primitives::transaction::fees::zip317::FeeError;
 
 use crate::lightwallet::{
     keys::{
@@ -33,7 +34,7 @@ pub enum BuilderError {
     #[error("Error: No private key found for the given address")]
     NoAssociatedPrivateKey,
     #[error("Error: from ZCash Tx Builder")]
-    Inner(#[from] ZBuilderError),
+    Inner(#[from] ZBuilderError<FeeError>),
 }
 
 pub struct InMemoryBuilder<'a, P: Parameters> {

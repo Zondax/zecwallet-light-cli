@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "lib",
     "cli",
@@ -6,3 +7,12 @@ members = [
 
 [profile.release]
 debug = false
+
+[patch.crates-io]
+zcash_address = { path = "../librustzcash/components/zcash_address/" }
+zcash_primitives = { path = "../librustzcash/zcash_primitives/" }
+zcash_client_backend = { path = "../librustzcash/zcash_client_backend" }
+zcash_note_encryption = { path = "../librustzcash/components/zcash_note_encryption" }
+zcash_encoding = { path = "../librustzcash/components/zcash_encoding/" }
+zcash_proofs = { path = "../librustzcash/zcash_proofs/" }
+orchard = { path = "../orchard-aditya/" }
