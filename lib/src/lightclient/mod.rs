@@ -777,15 +777,25 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     pub async fn do_zec_price(&self) -> String {
-        let mut price = self.wallet.price.read().await.clone();
+        let mut price = self
+            .wallet
+            .price_info
+            .read()
+            .await
+            .clone();
 
         // If there is no price, try to fetch it first.
-        if price.zec_price.is_none() {
+        if price.price.is_none() {
             self.update_current_price().await;
-            price = self.wallet.price.read().await.clone();
+            price = self
+                .wallet
+                .price_info
+                .read()
+                .await
+                .clone();
         }
 
-        match price.zec_price {
+        match price.price {
             None => "Error: No price".to_string(),
             Some((ts, p)) => {
                 let o = object! {
@@ -878,7 +888,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .await
                 .collect();
 
-            self.wallet.txns.read().await.current.iter()
+            self.wallet.txs.read().await.current.iter()
                 .flat_map(|(txid, wtx)| {
                     let spendable_address = spendable_oaddress.clone();
                     wtx.o_notes.iter().filter_map(move |nd|
@@ -928,7 +938,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 .await
                 .collect();
 
-            self.wallet.txns.read().await.current.iter()
+            self.wallet.txs.read().await.current.iter()
                 .flat_map(|(txid, wtx)| {
                     let spendable_address = spendable_zaddress.clone();
                     wtx.s_notes.iter().filter_map(move |nd|
@@ -973,7 +983,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let mut pending_utxos: Vec<JsonValue> = vec![];
 
         {
-            self.wallet.txns.read().await.current.iter()
+            self.wallet.txs.read().await.current.iter()
                 .flat_map(|(txid, wtx)| {
                     wtx.utxos.iter().filter_map(move |utxo|
                         if !all_notes && utxo.spent.is_some() {
@@ -1080,7 +1090,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         // Create a list of TransactionItems from wallet txns
         let mut tx_list = self
             .wallet
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1460,12 +1470,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
     // Update the historical prices in the wallet, if any are present.
     async fn update_historical_prices(&self) {
-        let price = self.wallet.price.read().await.clone();
+        let price = self
+            .wallet
+            .price_info
+            .read()
+            .await
+            .clone();
 
         // Gather all transactions that need historical prices
         let txids_to_fetch = self
             .wallet
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1495,7 +1510,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                                 // Update the price
                                 // info!("Historical price at txid {} was {}", txid, p);
                                 self.wallet
-                                    .txns
+                                    .txs
                                     .write()
                                     .await
                                     .current
@@ -1517,7 +1532,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             };
 
         {
-            let mut p = self.wallet.price.write().await;
+            let mut p = self.wallet.price_info.write().await;
             p.last_historical_prices_fetched_at = Some(now());
             p.historical_prices_retry_count += retry_count_increase;
         }
@@ -1565,8 +1580,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
                     let h1 = tokio::spawn(async move {
                         let keys = lc1.wallet.keys_clone();
-                        let wallet_txns = lc1.wallet.txns.clone();
-                        let price = lc1.wallet.price.clone();
+                        let wallet_txns = lc1.wallet.txs.clone();
+                        let price = lc1.wallet.price_info.clone();
 
                         while let Some(rtx) = mempool_rx.recv().await {
                             if let Ok(tx) = Transaction::read(
@@ -1706,7 +1721,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             BlockAndWitnessData::invalidate_block(
                 last_scanned_height,
                 self.wallet.blocks.clone(),
-                self.wallet.txns.clone(),
+                self.wallet.txs.clone(),
                 self.wallet.orchard_witnesses.clone(),
             )
             .await;
@@ -1787,7 +1802,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
         let bsync_data = self.bsync_data.clone();
         let spam_filter_threshold = self
             .wallet
-            .wallet_options
+            .options
             .read()
             .await
             .spam_threshold;
@@ -1849,7 +1864,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                     .await
                     .clone(),
                 self.wallet.orchard_witnesses.clone(),
-                *self.wallet.wallet_options.read().await,
+                *self.wallet.options.read().await,
             )
             .await;
 
@@ -1985,7 +2000,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             .read()
             .await
             .block_data
-            .update_orchard_spends_and_witnesses(self.wallet.txns.clone(), scan_full_txn_tx)
+            .update_orchard_spends_and_witnesses(self.wallet.txs.clone(), scan_full_txn_tx)
             .await;
 
         tasks2.push(fulltx_fetcher_handle);

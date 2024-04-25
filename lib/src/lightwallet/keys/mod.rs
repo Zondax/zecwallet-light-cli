@@ -1,4 +1,3 @@
-use ripemd160::Digest;
 use zcash_primitives::{
     consensus::BlockHeight,
     sapling::PaymentAddress,

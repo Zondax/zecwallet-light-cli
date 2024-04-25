@@ -36,7 +36,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for GetOptionC
             let value = match option_name {
                 "download_memos" => match lightclient
                     .wallet
-                    .wallet_options
+                    .options
                     .read()
                     .await
                     .download_memos
@@ -48,7 +48,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for GetOptionC
                 .to_string(),
                 "spam_filter_threshold" => lightclient
                     .wallet
-                    .wallet_options
+                    .options
                     .read()
                     .await
                     .spam_threshold

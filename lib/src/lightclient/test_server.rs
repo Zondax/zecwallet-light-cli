@@ -140,7 +140,7 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
                 let prev_txid = WalletTx::new_txid(&vin.prevout.hash().to_vec());
                 if let Some(wtx) = lc
                     .wallet
-                    .txns
+                    .txs
                     .read()
                     .await
                     .current

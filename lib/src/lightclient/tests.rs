@@ -1349,7 +1349,7 @@ async fn aborted_resync() {
     let list_before = lc.do_list_transactions(false).await;
     let witness_before = lc
         .wallet
-        .txns
+        .txs
         .read()
         .await
         .current
@@ -1386,7 +1386,7 @@ async fn aborted_resync() {
     let list_after = lc.do_list_transactions(false).await;
     let witness_after = lc
         .wallet
-        .txns
+        .txs
         .read()
         .await
         .current

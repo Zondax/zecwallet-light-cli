@@ -54,7 +54,7 @@ mod test {
             incw_to_string(&notes[0].witness),
             incw_to_string(
                 lc.wallet
-                    .txns
+                    .txs
                     .read()
                     .await
                     .current
@@ -91,7 +91,7 @@ mod test {
             incw_to_string(&notes[0].witness),
             incw_to_string(
                 lc.wallet
-                    .txns
+                    .txs
                     .read()
                     .await
                     .current
@@ -120,7 +120,7 @@ mod test {
             incw_to_string(&notes[0].witness),
             incw_to_string(
                 lc.wallet
-                    .txns
+                    .txs
                     .read()
                     .await
                     .current
@@ -239,7 +239,7 @@ mod test {
             incw_to_string(&notes[0].witness),
             incw_to_string(
                 lc.wallet
-                    .txns
+                    .txs
                     .read()
                     .await
                     .current

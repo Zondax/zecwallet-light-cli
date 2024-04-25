@@ -54,7 +54,8 @@ use crate::lightwallet::utils;
 
 pub struct LightWallet<P> {
     // All the keys in the wallet
-    keys: Arc<RwLock<Keystores<P>>>,
+    // todo: rename to keyring
+    keystores: Arc<RwLock<Keystores<P>>>,
 
     // The block at which this wallet was born. Rescans will start from here.
     birthday: AtomicU64,
@@ -66,10 +67,10 @@ pub struct LightWallet<P> {
     pub(crate) blocks: Arc<RwLock<Vec<BlockData>>>,
 
     // List of all txns
-    pub(crate) txns: Arc<RwLock<WalletTxs>>,
+    pub(crate) txs: Arc<RwLock<WalletTxs>>,
 
     // Wallet options
-    pub(crate) wallet_options: Arc<RwLock<WalletOptions>>,
+    pub(crate) options: Arc<RwLock<WalletOptions>>,
 
     // Non-serialized fields
     pub(crate) config: LightClientConfig<P>,
@@ -81,7 +82,7 @@ pub struct LightWallet<P> {
     pub(crate) orchard_witnesses: Arc<RwLock<Option<BridgeTree<MerkleHashOrchard, MERKLE_DEPTH>>>>,
 
     // The current price of ZEC. (time_fetched, price in USD)
-    pub price: Arc<RwLock<WalletZecPriceInfo>>,
+    pub price_info: Arc<RwLock<WalletZecPriceInfo>>,
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
@@ -100,16 +101,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .map_err(|e| Error::new(ErrorKind::InvalidData, e))?;
 
         Ok(Self {
-            keys: Arc::new(RwLock::new(keys.into())),
-            txns: Arc::new(RwLock::new(WalletTxs::new())),
+            keystores: Arc::new(RwLock::new(keys.into())),
+            txs: Arc::new(RwLock::new(WalletTxs::new())),
             blocks: Arc::new(RwLock::new(vec![])),
-            wallet_options: Arc::new(RwLock::new(WalletOptions::default())),
+            options: Arc::new(RwLock::new(WalletOptions::default())),
             config,
             orchard_witnesses: Arc::new(RwLock::new(None)),
             birthday: AtomicU64::new(height),
             verified_tree: Arc::new(RwLock::new(None)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
-            price: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
+            price_info: Arc::new(RwLock::new(WalletZecPriceInfo::new())),
         })
     }
 
@@ -119,16 +120,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         keystore: impl Into<Keystores<P>>,
     ) -> Self {
         Self {
-            keys: Arc::new(RwLock::new(keystore.into())),
-            txns: Default::default(),
+            keystores: Arc::new(RwLock::new(keystore.into())),
+            txs: Default::default(),
             blocks: Default::default(),
-            wallet_options: Default::default(),
+            options: Default::default(),
             config,
             orchard_witnesses: Arc::new(RwLock::new(None)),
             birthday: AtomicU64::new(height),
             verified_tree: Default::default(),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
-            price: Default::default(),
+            price_info: Default::default(),
         }
     }
 
@@ -269,16 +270,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let orchard_witnesses = if version <= 24 { None } else { Optional::read(&mut reader, |r| Self::read_tree(r))? };
 
         let mut lw = Self {
-            keys: Arc::new(RwLock::new(keys)),
-            txns: Arc::new(RwLock::new(txns)),
+            keystores: Arc::new(RwLock::new(keys)),
+            txs: Arc::new(RwLock::new(txns)),
             blocks: Arc::new(RwLock::new(blocks)),
             config: config.clone(),
-            wallet_options: Arc::new(RwLock::new(wallet_options)),
+            options: Arc::new(RwLock::new(wallet_options)),
             orchard_witnesses: Arc::new(RwLock::new(orchard_witnesses)),
             birthday: AtomicU64::new(birthday),
             verified_tree: Arc::new(RwLock::new(verified_tree)),
             send_progress: Arc::new(RwLock::new(SendProgress::new(0))),
-            price: Arc::new(RwLock::new(price)),
+            price_info: Arc::new(RwLock::new(price)),
         };
 
         // For old wallets, remove unused addresses
@@ -327,14 +328,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
-        self.txns
+        self.txs
             .read()
             .await
             .write(&mut writer)?;
 
         utils::write_string(&mut writer, &self.config.chain_name)?;
 
-        self.wallet_options
+        self.options
             .read()
             .await
             .write(&mut writer)?;
@@ -352,7 +353,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         })?;
 
         // Price info
-        self.price
+        self.price_info
             .read()
             .await
             .write(&mut writer)?;
@@ -374,7 +375,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     // them.
     pub async fn set_witness_block_heights(&mut self) {
         let top_height = self.last_scanned_height().await;
-        self.txns
+        self.txs
             .write()
             .await
             .current
@@ -387,15 +388,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     pub fn keys(&self) -> &RwLock<Keystores<P>> {
-        &self.keys
+        &self.keystores
     }
 
     pub fn keys_clone(&self) -> Arc<RwLock<Keystores<P>>> {
-        self.keys.clone()
+        self.keystores.clone()
     }
 
     pub fn txns(&self) -> Arc<RwLock<WalletTxs>> {
-        self.txns.clone()
+        self.txs.clone()
     }
 
     pub async fn set_blocks(
@@ -442,7 +443,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         value: MemoDownloadOption,
     ) {
-        self.wallet_options
+        self.options
             .write()
             .await
             .download_memos = value;
@@ -452,7 +453,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         value: i64,
     ) {
-        self.wallet_options
+        self.options
             .write()
             .await
             .spam_threshold = value;
@@ -478,7 +479,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             return;
         }
 
-        self.price.write().await.zec_price = Some((utils::now(), price));
+        self.price_info.write().await.price = Some((utils::now(), price));
         info!("Set current ZEC Price to USD {}", price);
     }
 
@@ -543,7 +544,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn get_first_tx_block(&self) -> u64 {
         // Find the first transaction
         let earliest_block = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -713,7 +714,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     /// be set and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         self.blocks.write().await.clear();
-        self.txns.write().await.clear();
+        self.txs.write().await.clear();
         self.verified_tree.write().await.take();
         self.orchard_witnesses
             .write()
@@ -746,7 +747,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         _tree: &str,
     ) {
         let mut blocks_guard = self.blocks.write().await;
-        let mut txns_guard = self.txns.write().await;
+        let mut txns_guard = self.txs.write().await;
 
         blocks_guard.clear();
         txns_guard.clear();
@@ -831,7 +832,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         addr: Option<String>,
     ) -> u64 {
-        self.txns
+        self.txs
             .read()
             .await
             .current
@@ -861,7 +862,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         addr: Option<String>,
     ) -> u64 {
-        self.txns
+        self.txs
             .read()
             .await
             .current
@@ -890,7 +891,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     // Get all (unspent) utxos. Unconfirmed spent utxos are included
     pub async fn get_utxos(&self) -> Vec<Utxo> {
-        self.txns
+        self.txs
             .read()
             .await
             .current
@@ -928,7 +929,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // TODO: allow any keystore (see usage)
         let keys = self.keys().read().await;
 
-        let txns = self.txns.read().await;
+        let txns = self.txs.read().await;
         let txns = txns.current.values();
 
         let mut sum = 0;
@@ -972,7 +973,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        self.txns
+        self.txs
             .read()
             .await
             .current
@@ -1014,7 +1015,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let keys = self.keys().read().await;
 
         let mut sum = 0;
-        let txns = self.txns.read().await;
+        let txns = self.txs.read().await;
         let txns = txns.current.values();
 
         for tx in txns {
@@ -1065,7 +1066,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
 
         let highest_account = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1098,7 +1099,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .expect("in memory keystore");
 
         let zaddrs: Vec<String> = self
-            .keys
+            .keystores
             .read()
             .await
             .get_all_zaddresses()
@@ -1110,7 +1111,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
 
         let highest_account = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1143,7 +1144,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     ) -> Option<Message> {
         // Collect all the ivks in the wallet
         let ivks: Vec<_> = self
-            .keys
+            .keystores
             .read()
             .await
             .get_all_extfvks()
@@ -1172,7 +1173,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // First, build an index of all the txids and the heights at which they were
         // spent.
         let spent_txid_map: HashMap<_, _> = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1181,7 +1182,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .collect();
 
         // Go over all the sapling notes that might need updating
-        self.txns
+        self.txs
             .write()
             .await
             .current
@@ -1199,7 +1200,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             });
 
         // Go over all the Utxos that might need updating
-        self.txns
+        self.txs
             .write()
             .await
             .current
@@ -1220,12 +1221,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         target_amount: Amount,
     ) -> Vec<SpendableOrchardNote> {
-        let keys = self.keys.read().await;
+        let keys = self.keystores.read().await;
         let owt = self.orchard_witnesses.read().await;
         let orchard_witness_tree = owt.as_ref().unwrap();
 
         let mut candidate_notes = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1294,10 +1295,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         &self,
         target_amount: Amount,
     ) -> Vec<SpendableSaplingNote> {
-        let keys = self.keys.read().await;
+        let keys = self.keystores.read().await;
 
         let mut candidate_notes = self
-            .txns
+            .txs
             .read()
             .await
             .current
@@ -1540,7 +1541,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // right address
         let (address_to_key, (first_zkey_ovk, first_zkey_addr)) = {
             let (map, first) = {
-                let guard = self.keys.read().await;
+                let guard = self.keystores.read().await;
                 tokio::join!(guard.get_taddr_to_key_map(), guard.first_zkey())
             };
 
@@ -1548,7 +1549,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             let first = match first {
                 Some(first) => first,
                 None => {
-                    let mut guard = self.keys.write().await;
+                    let mut guard = self.keystores.write().await;
                     guard.add_zaddr().await;
                     guard.first_zkey().await.unwrap()
                 },
@@ -1724,7 +1725,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             p.total = s_notes.len() as u32 + total_z_recepients + total_o_recepients;
         }
 
-        let mut keys = self.keys.write().await;
+        let mut keys = self.keystores.write().await;
 
         println!("{}: Building transaction", utils::now() - start_time);
         let (tx, _) = match builder.build(&prover) {
@@ -1766,7 +1767,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // Mark notes as spent.
         {
             // Mark sapling and orchard notes as unconfirmed spent
-            let mut txs = self.txns.write().await;
+            let mut txs = self.txs.write().await;
             for selected in o_notes {
                 let mut spent_note = txs
                     .current
@@ -1812,7 +1813,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         // Add this Tx to the mempool structure
         {
-            let price = self.price.read().await.clone();
+            let price = self.price_info.read().await.clone();
 
             FetchFullTxns::<P>::scan_full_tx(
                 self.config.clone(),
@@ -1820,8 +1821,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 target_height,
                 true,
                 utils::now() as u32,
-                self.keys.clone(),
-                self.txns.clone(),
+                self.keystores.clone(),
+                self.txs.clone(),
                 WalletTx::get_price(utils::now(), &price),
             )
             .await;
@@ -1878,7 +1879,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn in_memory_keys<'this>(
         &'this self
     ) -> Result<impl std::ops::Deref<Target = InMemoryKeys<P>> + 'this, io::Error> {
-        let keys = self.keys.read().await;
+        let keys = self.keystores.read().await;
         tokio::sync::RwLockReadGuard::try_map(keys, |keys| match keys {
             Keystores::Memory(keys) => Some(keys),
             _ => None,
@@ -1889,7 +1890,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn in_memory_keys_mut<'this>(
         &'this self
     ) -> Result<impl std::ops::DerefMut<Target = InMemoryKeys<P>> + 'this, io::Error> {
-        let keys = self.keys.write().await;
+        let keys = self.keystores.write().await;
         tokio::sync::RwLockWriteGuard::try_map(keys, |keys| match keys {
             Keystores::Memory(keys) => Some(keys),
             _ => None,

@@ -8,7 +8,7 @@ use zcash_encoding::Optional;
 #[derive(Clone, Debug)]
 pub struct WalletZecPriceInfo {
     // Latest price of ZEC and when it was fetched
-    pub zec_price: Option<(u64, f64)>,
+    pub price: Option<(u64, f64)>,
 
     // Wallet's currency. All the prices are in this currency
     pub currency: String,
@@ -23,7 +23,7 @@ pub struct WalletZecPriceInfo {
 impl Default for WalletZecPriceInfo {
     fn default() -> Self {
         Self {
-            zec_price: None,
+            price: None,
             currency: "USD".to_string(), // Only USD is supported right now.
             last_historical_prices_fetched_at: None,
             historical_prices_retry_count: 0,
@@ -59,7 +59,7 @@ impl WalletZecPriceInfo {
         let last_historical_prices_fetched_at = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
         let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
 
-        Ok(Self { zec_price, currency, last_historical_prices_fetched_at, historical_prices_retry_count })
+        Ok(Self { price: zec_price, currency, last_historical_prices_fetched_at, historical_prices_retry_count })
     }
 
     pub fn write<W: Write>(

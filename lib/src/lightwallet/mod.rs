@@ -1,7 +1,3 @@
-use std::io::{Read, Write};
-
-use zcash_primitives::merkle_tree::HashSer;
-
 pub(crate) mod data;
 pub(crate) mod keys;
 mod send_progress;

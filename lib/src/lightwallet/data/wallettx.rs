@@ -75,7 +75,7 @@ impl WalletTx {
         datetime: u64,
         price: &WalletZecPriceInfo,
     ) -> Option<f64> {
-        match price.zec_price {
+        match price.price {
             None => None,
             Some((t, p)) => {
                 // If the price was fetched within 24 hours of this Tx, we use the "current"
