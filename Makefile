@@ -1,12 +1,14 @@
+# quit - Quit the lightwallet, saving state to disk
+# info - Get the lightwalletd server's info
+
 # sendprogress - Get the progress of any send transactions that are currently computing
 # zecprice - Get the latest ZEC price in the wallet's currency (USD)
+# defaultfee - Returns the minumum fee in zats for outgoing transactions
+
 # getoption - Get a wallet option
 # encrypt - Encrypt the wallet with a password
-# defaultfee - Returns the minumum fee in zats for outgoing transactions
 # shield - Shield your transparent ZEC into a sapling address
-# info - Get the lightwalletd server's info
 # seed - Display the seed phrase
-# quit - Quit the lightwallet, saving state to disk
 # encryptionstatus - Check if the wallet is encrypted and if it is locked
 # import - Import spending or viewing keys into the wallet
 # list - List all transactions in the wallet

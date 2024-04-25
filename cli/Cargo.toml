@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 rustyline = "9"
-clap = "3"
+clap = "4"
 log = "0.4"
 shellwords = "1"
 json = "0.12"
