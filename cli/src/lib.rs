@@ -123,9 +123,16 @@ pub fn startup(
     let (config, latest_block_height) = LightClientConfig::<MainNetwork>::create(server.clone(), data_dir)?;
 
     let lightclient = match seed {
-        Some(phrase) => Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?),
-        None if ledger => Arc::new(LightClient::with_ledger(&config, birthday)?),
+        Some(phrase) => {
+            info!("Starting up. From Phrase");
+            Arc::new(LightClient::new_from_phrase(phrase, &config, birthday, false)?)
+        },
+        None if ledger => {
+            info!("Starting up. With Ledger device");
+            Arc::new(LightClient::with_ledger(&config, birthday)?)
+        },
         None => {
+            info!("starting up. From Disk");
             if config.wallet_exists() {
                 Arc::new(LightClient::read_from_disk(&config)?)
             } else {

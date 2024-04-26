@@ -8,7 +8,6 @@ use secp256k1::PublicKey;
 use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
-use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{self, BlockHeight, BranchId, TEST_NETWORK},

@@ -304,23 +304,29 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     ) -> io::Result<Self> {
         use crate::lightwallet::keys::LedgerKeystore;
 
-        if config.wallet_exists() {}
-
         Runtime::new()
             .unwrap()
             .block_on(async move {
+
                 let wallet = if config.wallet_exists() {
+                    info!("Wallet exists");
+
                     let path = config.get_wallet_path();
                     let mut file = BufReader::new(File::open(path)?);
 
                     LightWallet::read(&mut file, config).await?
                 } else {
+                    info!("Wallet does NOT exists");
+
                     let ks = LedgerKeystore::new(config.clone())
                         .await
                         .map_err(|e| io::Error::new(ErrorKind::NotConnected, e))?;
 
+                    info!("LightWallet::with_keystore");
                     LightWallet::with_keystore(config.clone(), latest_block, ks)
                 };
+
+                info!("Create lightclient");
 
                 let l = LightClient {
                     wallet,
@@ -485,9 +491,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     pub fn init_logging(&self) -> io::Result<()> {
-        // Configure logging first.
-        let log_config = self.config.get_log_config()?;
-        log4rs::init_config(log_config).map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
+        // // Configure logging first.
+        // let log_config = self.config.get_log_config()?;
+        // log4rs::init_config(log_config).map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
 
         Ok(())
     }

@@ -8,11 +8,11 @@ use ledger_zcash::{
     builder::{Builder as ZBuilder, BuilderError},
     LedgerAppError, ZcashApp,
 };
+use log::info;
 use rand::rngs::OsRng;
 use secp256k1::PublicKey as SecpPublicKey;
 use tokio::sync::RwLock;
 use zcash_client_backend::encoding::encode_payment_address;
-use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus,
     consensus::{BlockHeight, BranchId, Parameters},
@@ -27,13 +27,15 @@ use zcash_primitives::{
     },
     zip32::{ChildIndex, DiversifierIndex},
 };
+use zcash_primitives::transaction::builder::Progress;
 use zx_bip44::BIP44Path;
 
-use super::{Builder, InMemoryKeys, Keystore, KeystoreBuilderLifetime, SaplingMetadata, TxProver};
 use crate::{
-    lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
+    lightclient::lightclient_config::{GAP_RULE_UNUSED_ADDRESSES, LightClientConfig},
     lightwallet::utils::compute_taddr,
 };
+
+use super::{Builder, InMemoryKeys, Keystore, KeystoreBuilderLifetime, SaplingMetadata, TxProver};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerError {
@@ -98,6 +100,7 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     ///
     /// Uses 44'/1'/0/0/0 derivation path
     async fn get_id(app: &ZcashApp<TransportNativeHID>) -> Result<SecpPublicKey, LedgerError> {
+        info!("get_id");
         app.get_address_unshielded(&BIP44Path([44 + 0x8000_0000, 1 + 0x8000_0000, 0, 0, 0]), false)
             .await
             .map_err(Into::into)
@@ -110,11 +113,14 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     /// but won't verify that the correct app is open or that is a "known"
     /// device
     fn connect_ledger() -> Result<ZcashApp<TransportNativeHID>, LedgerError> {
+        info!("Connect to HID transport");
+
         let hidapi = ledger_transport_hid::hidapi::HidApi::new().map_err(|hid| LedgerHIDError::Hid(hid))?;
 
         let transport = TransportNativeHID::new(&hidapi)?;
         let app = ZcashApp::new(transport);
 
+        info!("Ledger connection is ready");
         Ok(app)
     }
 
@@ -123,8 +129,12 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     /// Will error if there are no available devices or
     /// if the wrong app is open on the ledger device.
     pub async fn new(config: LightClientConfig<P>) -> Result<Self, LedgerError> {
+        info!("LedgerKeystore::new");
+
         let app = Self::connect_ledger()?;
+
         let ledger_id = Self::get_id(&app).await?;
+        info!("Get Ledger ID: {}", ledger_id);
 
         Ok(Self { app, config, ledger_id, transparent_addrs: Default::default(), shielded_addrs: Default::default() })
     }
@@ -157,14 +167,16 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
             .and_then(|(ivk, d, _)| ivk.to_payment_address(*d))
     }
 
-    /// Retrieve the defualt diversifier from a given device and path
+    /// Retrieve the default diversifier from a given device and path
     ///
-    /// The defualt diversifier is the first valid diversifier starting
+    /// The default diversifier is the first valid diversifier starting
     /// from index 0
     async fn get_default_div_from(
         app: &ZcashApp<TransportNativeHID>,
         idx: u32,
     ) -> Result<Diversifier, LedgerError> {
+        info!("read::get_default_div_from {}", idx);
+
         let mut index = DiversifierIndex::new();
 
         loop {
@@ -581,6 +593,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
                 ]
             };
 
+            info!("read?");
             let key = app
                 .get_address_unshielded(&BIP44Path(path), false)
                 .await
@@ -613,6 +626,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             // is only the latest element
             let idx = path[2];
 
+            info!("read::get_ivk {}", idx);
             let ivk = app
                 .get_ivk(idx)
                 .await
@@ -621,6 +635,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
 
             let div = Self::get_default_div_from(&app, idx).await?;
 
+            info!("read::get_ivk {}", idx);
             let ovk = app
                 .get_ovk(idx)
                 .await
@@ -648,6 +663,8 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
         &self,
         path: &[ChildIndex],
     ) -> Result<SecpPublicKey, Self::Error> {
+        info!("get_t_pubkey");
+
         let path = Self::path_slice_to_bip44(path)?;
         // avoid keeping the read guard so we can get the write guard later if necessary
         // without causing a deadlock
@@ -682,6 +699,8 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
         &self,
         path: &[ChildIndex],
     ) -> Result<PaymentAddress, Self::Error> {
+        info!("get_z_payment_address");
+
         if path.len() != 3 {
             return Err(LedgerError::InvalidPathLength(3));
         }

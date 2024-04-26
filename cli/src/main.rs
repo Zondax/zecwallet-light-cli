@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, info};
 use zecwallet_cli::{
     attempt_recover_seed, configure_clapapp, report_permission_error, start_interactive, startup, version::VERSION,
 };
@@ -8,11 +8,16 @@ use zecwalletlitelib::{
 };
 
 pub fn main() {
+    // Initialize the logger
+    env_logger::init();
+
     // Get command line arguments
     use clap::{App, Arg};
     let fresh_app = App::new("Zecwallet CLI");
     let configured_app = configure_clapapp!(fresh_app);
     let matches = configured_app.get_matches();
+
+    info!("Zecwallet CLI v{}", VERSION);
 
     if matches.is_present("recover") {
         // Create a Light Client Config in an attempt to recover the file.
