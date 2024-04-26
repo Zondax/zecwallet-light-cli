@@ -305,10 +305,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                 .await
                 .get_unspent_s_nullifiers();
             if let Some(s_bundle) = tx.sapling_bundle() {
-                for s in s_bundle.shielded_spends.iter() {
+                for s in s_bundle.shielded_spends().iter() {
                     if let Some((nf, value, txid)) = unspent_nullifiers
                         .iter()
-                        .find(|(nf, _, _)| *nf == s.nullifier)
+                        .find(|(nf, _, _)| *nf == *s.nullifier())
                     {
                         wallet_txns
                             .write()
@@ -363,11 +363,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         let mut outgoing_metadatas = vec![];
 
         if let Some(s_bundle) = tx.sapling_bundle() {
-            for output in s_bundle.shielded_outputs.iter() {
+            for output in s_bundle.shielded_outputs().iter() {
                 // Search all of our keys
                 for (i, ivk) in s_ivks.iter().enumerate() {
                     let (note, to, memo_bytes) =
-                        match try_sapling_note_decryption(&config.get_params(), height, ivk, output) {
+                        match try_sapling_note_decryption(&config.get_params(), height, ivk.into(), output) {
                             Some(ret) => ret,
                             None => continue,
                         };
@@ -424,7 +424,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
                                         if z_addresses.contains(&address) && memo == Memo::Empty {
                                             None
                                         } else {
-                                            Some(OutgoingTxMetadata { address, value: note.value, memo })
+                                            Some(OutgoingTxMetadata { address, value: note.value(), memo })
                                         }
                                     },
                                 }
@@ -507,7 +507,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
 
                     // If this is just our address with an empty memo, do nothing.
                     if !(u_addresses.contains(&address) && memo == Memo::Empty) {
-                        outgoing_metadatas.push(OutgoingTxMetadata { address, value: note.value().inner(), memo });
+                        outgoing_metadatas.push(OutgoingTxMetadata { address, value: note.value(), memo });
                     }
                 }
             }

@@ -955,7 +955,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                                 "created_in_block"   => created_block,
                                 "datetime"           => wtx.datetime,
                                 "created_in_txid"    => format!("{}", txid),
-                                "value"              => nd.note.value,
+                                "value"              => nd.note.value().inner(),
                                 "unconfirmed"        => wtx.unconfirmed,
                                 "is_change"          => nd.is_change,
                                 "address"            => address,
@@ -1105,7 +1105,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                         .s_notes // Sapling
                         .iter()
                         .filter(|nd| nd.is_change)
-                        .map(|nd| nd.note.value)
+                        .map(|nd| nd.note.value().inner())
                         .sum::<u64>()
                         + v.o_notes // Orchard
                             .iter()
@@ -1124,7 +1124,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                         .map(|om| {
                             let mut o = object! {
                                 "address" => om.address.clone(),
-                                "value"   => om.value,
+                                "value"   => om.value.inner(),
                                 "memo"    => LightWallet::<P>::memo_str(Some(om.memo.clone()))
                             };
 
@@ -1159,7 +1159,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                         "datetime"     => v.datetime,
                         "position"     => i,
                         "txid"         => format!("{}", v.txid),
-                        "amount"       => nd.note.value as i64,
+                        "amount"       => nd.note.value().inner() as i64,
                         "zec_price"    => v.zec_price.map(|p| (p * 100.0).round() / 100.0),
                         "address"      => LightWallet::<P>::sapling_note_address(self.config.hrp_sapling_address(), nd),
                         "memo"         => LightWallet::<P>::memo_str(nd.memo.clone())

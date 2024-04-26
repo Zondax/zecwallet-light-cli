@@ -24,7 +24,7 @@ use zcash_primitives::{
         redjubjub::{self, Signature},
         Node,
     },
-    sapling::{Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed, value::ValueCommitment},
+    sapling::{value::ValueCommitment, Diversifier, Note, Nullifier, PaymentAddress, ProofGenerationKey, Rseed},
     transaction::{
         components::{sapling, transparent, Amount, OutPoint, OutputDescription, TxIn, TxOut, GROTH_PROOF_SIZE},
         Authorized, Transaction, TransactionData, TxId,
@@ -105,17 +105,11 @@ impl FakeTransaction {
         let mut rseed_bytes = [0u8; 32];
         rng.fill_bytes(&mut rseed_bytes);
 
-        let note = Note {
-            g_d: to.diversifier().g_d().unwrap(),
-            pk_d: *to.pk_d(),
-            value,
-            rseed: Rseed::AfterZip212(rseed_bytes),
-        };
+        let note = Note::from_parts(*to, value.into(), Rseed::AfterZip212(rseed_bytes));
 
         let encryptor = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             ovk,
             note.clone(),
-            to.clone(),
             Memo::default().into(),
         );
 
@@ -411,7 +405,7 @@ impl FakeCompactBlockList {
             let mut ctx = CompactTx::default();
 
             if let Some(s_bundle) = tx.sapling_bundle() {
-                for out in &s_bundle.shielded_outputs {
+                for out in &s_bundle.shielded_outputs() {
                     let mut cout = CompactSaplingOutput::default();
                     cout.cmu = out.cmu.to_repr().to_vec();
                     cout.epk = out.ephemeral_key.0.to_vec();
@@ -420,7 +414,7 @@ impl FakeCompactBlockList {
                     ctx.outputs.push(cout);
                 }
 
-                for spend in &s_bundle.shielded_spends {
+                for spend in &s_bundle.shielded_spends() {
                     let mut cs = CompactSaplingSpend::default();
                     cs.nf = spend.nullifier.to_vec();
 

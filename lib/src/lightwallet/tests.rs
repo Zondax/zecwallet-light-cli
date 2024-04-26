@@ -48,7 +48,7 @@ mod test {
             .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(notes[0].note.value().inner(), value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
             incw_to_string(&notes[0].witness),
@@ -85,7 +85,7 @@ mod test {
             .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(notes[0].note.value().inner(), value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
             incw_to_string(&notes[0].witness),
@@ -114,7 +114,7 @@ mod test {
             .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value);
+        assert_eq!(notes[0].note.value().inner(), value);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
             incw_to_string(&notes[0].witness),
@@ -233,7 +233,7 @@ mod test {
             .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value1);
+        assert_eq!(notes[0].note.value().inner(), value1);
         assert_eq!(utxos.len(), 0);
         assert_eq!(
             incw_to_string(&notes[0].witness),
@@ -268,7 +268,7 @@ mod test {
             .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
-        assert_eq!(notes[0].note.value, value2);
+        assert_eq!(notes[0].note.value().inner(), value2);
         assert_eq!(utxos.len(), 0);
 
         // Selecting a bigger amount should select both notes

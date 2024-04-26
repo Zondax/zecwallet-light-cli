@@ -4,12 +4,12 @@ use std::path::Path;
 use ff::{Field, PrimeField};
 use group::GroupEncoding;
 use json::JsonValue;
-use rand::rngs::OsRng;
 use rand::RngCore;
+use rand::rngs::OsRng;
 use tempdir::TempDir;
 use tokio::runtime::Runtime;
-use tonic::transport::Channel;
 use tonic::Request;
+use tonic::transport::Channel;
 use zcash_client_backend::address::RecipientAddress;
 use zcash_client_backend::encoding::{
     encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address,
@@ -18,25 +18,27 @@ use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::consensus::{BlockHeight, BranchId, TEST_NETWORK};
 use zcash_primitives::memo::Memo;
 use zcash_primitives::merkle_tree::{CommitmentTree, IncrementalWitness};
+use zcash_primitives::sapling::{Note, Rseed, value::ValueCommitment};
+use zcash_primitives::sapling::Node;
 use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::sapling::redjubjub::Signature;
-use zcash_primitives::sapling::Node;
-use zcash_primitives::sapling::{Note, Rseed, value::ValueCommitment};
-use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
-use zcash_primitives::transaction::components::{sapling, Amount};
-use zcash_primitives::transaction::components::{OutputDescription, GROTH_PROOF_SIZE};
+use zcash_primitives::sapling::value::NoteValue;
 use zcash_primitives::transaction::{Transaction, TransactionData};
+use zcash_primitives::transaction::components::{Amount, sapling};
+use zcash_primitives::transaction::components::{GROTH_PROOF_SIZE, OutputDescription};
+use zcash_primitives::transaction::components::amount::DEFAULT_FEE;
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
+
+use crate::grpc::{CompactSaplingOutput, CompactTx, Empty};
+use crate::grpc::compact_tx_streamer_client::CompactTxStreamerClient;
+use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
+use crate::lightclient::blaze::test_utils::{FakeCompactBlockList, FakeTransaction, new_transactiondata};
+use crate::lightclient::LightClient;
+use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
+use crate::lightwallet::data::wallettx::WalletTx;
 
 use super::checkpoints;
 use super::config::{LightClientConfig, UnitTestNetwork};
-use crate::grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-use crate::grpc::{CompactSaplingOutput, CompactTx, Empty};
-use crate::lightclient::blaze::fetch_full_tx::FetchFullTxns;
-use crate::lightclient::blaze::test_utils::{new_transactiondata, FakeCompactBlockList, FakeTransaction};
-use crate::lightclient::test_server::{create_test_server, mine_pending_blocks, mine_random_blocks};
-use crate::lightclient::LightClient;
-use crate::lightwallet::data::wallettx::WalletTx;
 
 #[test]
 fn new_wallet_from_phrase() {
@@ -484,23 +486,18 @@ async fn multiple_incoming_same_tx() {
         let mut rseed_bytes = [0u8; 32];
         rng.fill_bytes(&mut rseed_bytes);
 
-        let note = Note {
-            g_d: to.diversifier().g_d().unwrap(),
-            pk_d: *to.pk_d(),
-            value,
-            rseed: Rseed::AfterZip212(rseed_bytes),
-        };
+        let note_value = NoteValue::from_raw(value);
+        let note = Note::from_parts(to.clone(), note_value, Rseed::AfterZip212(rseed_bytes));
 
         let encryptor = NoteEncryption::<SaplingDomain<zcash_primitives::consensus::Network>>::new(
             None,
             note.clone(),
-            to.clone(),
             Memo::default().into(),
         );
 
         let mut rng = OsRng;
         let rcv = jubjub::Fr::random(&mut rng);
-        let cv = ValueCommitment { value, randomness: rcv };
+        let cv = ValueCommitment { value: note_value, randomness: rcv };
 
         let cmu = note.cmu();
         let od = OutputDescription {

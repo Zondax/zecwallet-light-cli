@@ -18,7 +18,8 @@ use zcash_primitives::{
     memo::Memo,
     sapling::{
         note_encryption::{prf_ock, try_sapling_note_decryption, SaplingDomain},
-        PaymentAddress, Rseed, SaplingIvk, value::ValueCommitment,
+        value::ValueCommitment,
+        PaymentAddress, Rseed, SaplingIvk,
     },
     transaction::components::{OutputDescription, GROTH_PROOF_SIZE},
 };
@@ -65,7 +66,11 @@ impl Message {
 
         // Construct the value commitment, used if an OVK was supplied to create
         // out_ciphertext
-        let value_commitment = ValueCommitment { value, randomness: jubjub::Fr::random(&mut rng) };
+        let value_commitment = ValueCommitment {
+            value,
+            randomness: jubjub::Fr::random(&mut rng)
+        };
+
         let cv = value_commitment.commitment().into();
 
         // Use a rseed from pre-canopy. It doesn't really matter, but this is what is

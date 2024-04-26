@@ -4,11 +4,12 @@ use std::{io, usize};
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use zcash_primitives::memo::{Memo, MemoBytes};
+use zcash_primitives::sapling::value::NoteValue;
 
 #[derive(PartialEq)]
 pub struct OutgoingTxMetadata {
     pub address: String,
-    pub value: u64,
+    pub value: NoteValue,
     pub memo: Memo,
 }
 
@@ -31,6 +32,8 @@ impl OutgoingTxMetadata {
             Err(e) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Couldn't create memo: {}", e))),
         }?;
 
+        let value = NoteValue::from_raw(value);
+
         Ok(OutgoingTxMetadata { address, value, memo })
     }
 
@@ -42,7 +45,7 @@ impl OutgoingTxMetadata {
         writer.write_u64::<LittleEndian>(self.address.as_bytes().len() as u64)?;
         writer.write_all(self.address.as_bytes())?;
 
-        writer.write_u64::<LittleEndian>(self.value)?;
+        writer.write_u64::<LittleEndian>(self.value.inner())?;
         writer.write_all(self.memo.encode().as_array())
     }
 }

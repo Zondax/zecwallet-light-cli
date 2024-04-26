@@ -276,7 +276,7 @@ impl WalletTxs {
                 wtx.s_notes
                     .iter()
                     .filter(|nd| nd.spent.is_none())
-                    .map(move |nd| (nd.nullifier, nd.note.value, wtx.txid))
+                    .map(move |nd| (nd.nullifier, nd.note.value(), wtx.txid))
             })
             .collect()
     }
@@ -420,7 +420,7 @@ impl WalletTxs {
 
         note_data.spent = Some((*spent_txid, spent_at_height.into()));
         note_data.unconfirmed_spent = None;
-        note_data.note.value
+        note_data.note.value().inner()
     }
 
     // Check this transaction to see if it is an outgoing transaction, and if it is,

@@ -499,7 +499,7 @@ impl<P: Parameters + Send + Sync + 'static> Keystores<P> {
 
         // Writing the value in little endian
         note_contents
-            .write_u64::<LittleEndian>(note.value)
+            .write_u64::<LittleEndian>(note.value().inner())
             .unwrap();
 
         // Write g_d

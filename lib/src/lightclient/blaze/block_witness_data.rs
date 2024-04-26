@@ -296,7 +296,7 @@ impl BlockAndWitnessData {
                             let cb = &blocks.get(i).unwrap().cb();
                             for ctx in &cb.vtx {
                                 for co in &ctx.outputs {
-                                    let node = Node::new(co.cmu().unwrap().into());
+                                    let node = Node::from_scalar(co.cmu().unwrap());
                                     tree.append(node).unwrap();
                                 }
                             }
@@ -737,7 +737,7 @@ impl BlockAndWitnessData {
         // output_num
         for (t_num, ctx) in cb.vtx.iter().enumerate() {
             for (o_num, co) in ctx.outputs.iter().enumerate() {
-                let node = Node::new(co.cmu().unwrap().into());
+                let node = Node::from_scalar(co.cmu().unwrap());
                 tree.append(node).unwrap();
                 if t_num == tx_num && o_num == output_num {
                     return Ok(IncrementalWitness::from_tree(&tree));
@@ -776,7 +776,7 @@ impl BlockAndWitnessData {
                 let cb = &blocks.get(i as usize).unwrap().cb();
                 for ctx in &cb.vtx {
                     for co in &ctx.outputs {
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_scalar(co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
                 }
@@ -830,7 +830,7 @@ impl BlockAndWitnessData {
                     // If we've already passed the txid and output_num, stream the results
                     if txid_found && output_found {
                         let co = ctx.outputs.get(j as usize).unwrap();
-                        let node = Node::new(co.cmu().unwrap().into());
+                        let node = Node::from_scalar(co.cmu().unwrap().into());
                         w.append(node).unwrap();
                     }
 

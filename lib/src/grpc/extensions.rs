@@ -4,10 +4,10 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use orchard::note_encryption::OrchardDomain;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
+use zcash_primitives::sapling::note_encryption::SaplingDomain;
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
     consensus::{BlockHeight, Parameters},
-    sapling::note_encryption::SaplingDomain,
 };
 
 use crate::grpc::types::{CompactBlock, CompactOrchardAction, CompactSaplingOutput};
@@ -112,9 +112,11 @@ impl<P: Parameters> ShieldedOutput<SaplingDomain<P>, 52_usize> for CompactSaplin
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(*vec_to_array(&self.epk))
     }
+
     fn cmstar_bytes(&self) -> [u8; 32] {
         *vec_to_array(&self.cmu)
     }
+
     fn enc_ciphertext(&self) -> &[u8; 52] {
         vec_to_array(&self.ciphertext)
     }

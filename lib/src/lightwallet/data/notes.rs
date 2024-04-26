@@ -66,7 +66,7 @@ impl OrchardNoteData {
         reader.read_exact(&mut note_rseed_bytes)?;
         let note_rseed = RandomSeed::from_bytes(note_rseed_bytes, &note_rho).unwrap();
 
-        let note = orchard::Note::from_parts(note_address, NoteValue::from_raw(note_value), note_rho, note_rseed);
+        let note = orchard::Note::from_parts(note_address, NoteValue::from_raw(note_value), note_rho, note_rseed).unwrap();
 
         let witness_position = Optional::read(&mut reader, |r| {
             let pos = r.read_u64::<LittleEndian>()?;
@@ -223,17 +223,12 @@ impl SaplingNoteData {
             (value, rseed)
         };
 
-        let maybe_note = extfvk
+        let note = extfvk
             .fvk
             .vk
             .to_payment_address(diversifier)
             .unwrap()
             .create_note(value, rseed);
-
-        let note = match maybe_note {
-            Some(n) => Ok(n),
-            None => Err(io::Error::new(io::ErrorKind::InvalidInput, "Couldn't create the note for the address")),
-        }?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<Node>::read(r))?;
         let top_height = if version < 20 { 0 } else { reader.read_u64::<LittleEndian>()? };
@@ -332,9 +327,9 @@ impl SaplingNoteData {
 
         // Writing the note means writing the note.value and note.r. The Note is
         // recoverable from these 2 values and the Payment address.
-        writer.write_u64::<LittleEndian>(self.note.value)?;
+        writer.write_u64::<LittleEndian>(self.note.value().inner())?;
 
-        utils::write_rseed(&mut writer, &self.note.rseed)?;
+        utils::write_rseed(&mut writer, &self.note.rseed())?;
 
         Vector::write(&mut writer, &self.witnesses.witnesses, |wr, wi| wi.write(wr))?;
         writer.write_u64::<LittleEndian>(self.witnesses.top_height)?;

@@ -625,8 +625,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         // First, try to interpret the key
         let extsk = match decode_extended_spending_key(self.config.hrp_sapling_private_key(), &sk) {
-            Ok(Some(k)) => k,
-            Ok(None) => return "Error: Couldn't decode spending key".to_string(),
+            Ok(k) => k,
             Err(e) => return format!("Error importing spending key: {}", e),
         };
 
@@ -686,8 +685,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         // First, try to interpret the key
         let extfvk = match decode_extended_full_viewing_key(self.config.hrp_sapling_viewing_key(), &vk) {
-            Ok(Some(k)) => k,
-            Ok(None) => return "Error: Couldn't decode viewing key".to_string(),
+            Ok(k) => k,
             Err(e) => return format!("Error importing viewing key: {}", e),
         };
 
@@ -883,7 +881,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         },
                         None => true,
                     })
-                    .map(|nd| if nd.spent.is_none() && nd.unconfirmed_spent.is_none() { nd.note.value().inner() } else { 0 })
+                    .map(
+                        |nd| {
+                            if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
+                                nd.note.value().inner()
+                            } else {
+                                0
+                            }
+                        },
+                    )
                     .sum::<u64>()
             })
             .sum::<u64>()
@@ -958,8 +964,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .await
                     && tx.block > BlockHeight::from_u32(anchor_height)
                 {
-                    // If confirmed but dont have anchor yet, it is unconfirmed
-                    sum += nd.note.value
+                    // If confirmed but doesn't have anchor yet, it is unconfirmed
+                    sum += nd.note.value().inner()
                 }
             }
         }
@@ -996,7 +1002,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                             },
                             None => true,
                         })
-                        .map(|nd| nd.note.value)
+                        .map(|nd| nd.note.value().inner())
                         .sum::<u64>()
                 } else {
                     0
@@ -1044,7 +1050,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         .await
                         && !nd.witnesses.is_empty()
                     {
-                        sum += nd.note.value;
+                        sum += nd.note.value().inner();
                     }
                 }
             }
@@ -1308,7 +1314,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .iter()
                     .map(move |note| (*txid, note))
             })
-            .filter(|(_, note)| note.note.value > 0)
+            .filter(|(_, note)| note.note.value().inner() > 0)
             .filter_map(|(txid, note)| {
                 // Filter out notes that are already spent
                 if note.spent.is_some() || note.unconfirmed_spent.is_some() {
@@ -1324,7 +1330,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             })
             .collect::<Vec<_>>();
 
-        candidate_notes.sort_by(|a, b| b.note.value.cmp(&a.note.value));
+        candidate_notes.sort_by(|a, b| {
+            b.note
+                .value()
+                .inner()
+                .cmp(&a.note.value().inner())
+        });
 
         // Select the minimum number of notes required to satisfy the target value
         let s_notes = candidate_notes
@@ -1333,7 +1344,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 if *running_total >= target_amount {
                     None
                 } else {
-                    *running_total += Amount::from_u64(spendable.note.value).unwrap();
+                    *running_total += Amount::from_u64(spendable.note.value().inner()).unwrap();
                     Some(spendable)
                 }
             })
@@ -1341,7 +1352,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         let sapling_value_selected = s_notes
             .iter()
-            .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap());
+            .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value().inner()).unwrap()).unwrap());
 
         if sapling_value_selected >= target_amount {
             return s_notes;
@@ -1396,7 +1407,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 .await;
             sapling_value_selected = s_notes
                 .iter()
-                .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap());
+                .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value().inner()).unwrap()).unwrap());
 
             // If we've selected enough, just return
             let selected_value = (sapling_value_selected + transparent_value_selected).unwrap();
@@ -1416,7 +1427,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 .await;
             sapling_value_selected = s_notes
                 .iter()
-                .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap());
+                .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value().inner()).unwrap()).unwrap());
         } else {
             todo!("Not implemented")
         }
@@ -1639,7 +1650,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 error!("{}", e);
                 return Err(e);
             } else {
-                change += selected.note.value;
+                change += selected.note.value().inner();
             }
         }
 
