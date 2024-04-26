@@ -12,7 +12,13 @@ use zcash_client_backend::{
     encoding::{encode_extended_full_viewing_key, encode_extended_spending_key, encode_payment_address},
 };
 use zcash_encoding::Vector;
-use zcash_primitives::{consensus::BlockHeight, consensus, legacy::TransparentAddress, sapling::{PaymentAddress, SaplingIvk}, zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey}};
+use zcash_primitives::{
+    consensus,
+    consensus::BlockHeight,
+    legacy::TransparentAddress,
+    sapling::{PaymentAddress, SaplingIvk},
+    zip32::{ChildIndex, ExtendedFullViewingKey, ExtendedSpendingKey},
+};
 
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
@@ -27,8 +33,9 @@ use crate::{
 mod builder;
 pub use builder::{BuilderError as InMemoryBuilderError, InMemoryBuilder};
 
-// Manages all the keys in the wallet. Note that the RwLock for this is present in `lightwallet.rs`, so we'll
-// assume that this is already gone through a RwLock, so we don't lock any of the individual fields.
+// Manages all the keys in the wallet. Note that the RwLock for this is present
+// in `lightwallet.rs`, so we'll assume that this is already gone through a
+// RwLock, so we don't lock any of the individual fields.
 pub struct InMemoryKeys<P> {
     // TODO: This struct is duplicated with LightWallet and LightClient
     config: LightClientConfig<P>,
@@ -55,7 +62,7 @@ pub struct InMemoryKeys<P> {
     pub(crate) tkeys: Vec<WalletTKey>,
 }
 
-impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
+impl<P: consensus::Parameters + Send + Sync + 'static> InMemoryKeys<P> {
     pub fn serialized_version() -> u64 {
         return 21;
     }
@@ -75,7 +82,11 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         }
     }
 
-    pub fn new(config: &LightClientConfig<P>, seed_phrase: Option<String>, num_zaddrs: u32) -> Result<Self, String> {
+    pub fn new(
+        config: &LightClientConfig<P>,
+        seed_phrase: Option<String>,
+        num_zaddrs: u32,
+    ) -> Result<Self, String> {
         let mut seed_bytes = [0u8; 32];
 
         if seed_phrase.is_none() {
@@ -87,9 +98,9 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
                 Ok(p) => p,
                 Err(e) => {
                     let e = format!("Error parsing phrase: {}", e);
-                    //error!("{}", e);
+                    // error!("{}", e);
                     return Err(e);
-                }
+                },
             };
 
             seed_bytes.copy_from_slice(&phrase.entropy());
@@ -108,28 +119,33 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
 
         // Derive only the first sk and address
         let tpk = {
-            //no real IO done in this call, so no worries about the futures executor
+            // no real IO done in this call, so no worries about the futures executor
             let skey =
                 futures::executor::block_on(this.get_t_secret_key(&Self::t_derivation_path(config.get_coin_type(), 0)))
-                    //only error possible is the wallet is locked but we checked it already
+                    // only error possible is the wallet is locked but we checked it already
                     .unwrap();
             WalletTKey::new_hdkey(&config.base58_pubkey_address(), 0, skey)
         };
         this.tkeys.push(tpk);
 
-        for hdkey_num in 0..num_zaddrs {
+        for hdkey_num in 0 .. num_zaddrs {
             let extsk = futures::executor::block_on(
                 this.get_z_private_spending_key(&Self::z_derivation_path(config.get_coin_type(), hdkey_num)),
             )
-            //wallet guaranteed unlocked so no errors there
+            // wallet guaranteed unlocked so no errors there
             .unwrap();
-            this.zkeys.push(WalletZKey::new_hdkey(hdkey_num, extsk));
+            this.zkeys
+                .push(WalletZKey::new_hdkey(hdkey_num, extsk));
         }
 
         Ok(this)
     }
 
-    pub fn read_old<R: Read>(version: u64, mut reader: R, config: &LightClientConfig<P>) -> io::Result<Self> {
+    pub fn read_old<R: Read>(
+        version: u64,
+        mut reader: R,
+        config: &LightClientConfig<P>,
+    ) -> io::Result<Self> {
         let encrypted = if version >= 4 { reader.read_u8()? > 0 } else { false };
 
         let mut enc_seed = [0u8; 48];
@@ -137,11 +153,7 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
             reader.read_exact(&mut enc_seed)?;
         }
 
-        let nonce = if version >= 4 {
-            Vector::read(&mut reader, |r| r.read_u8())?
-        } else {
-            vec![]
-        };
+        let nonce = if version >= 4 { Vector::read(&mut reader, |r| r.read_u8())? } else { vec![] };
 
         // Seed
         let mut seed_bytes = [0u8; 32];
@@ -189,7 +201,11 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
                 // Wallet is unlocked, read the spending keys as well
                 extsks
                     .into_iter()
-                    .zip(extfvks.into_iter().zip(addresses.iter()))
+                    .zip(
+                        extfvks
+                            .into_iter()
+                            .zip(addresses.iter()),
+                    )
                     .enumerate()
                     .map(|(i, (extsk, (extfvk, payment_address)))| {
                         let zk = WalletZKey::new_hdkey(i as u32, extsk);
@@ -206,8 +222,11 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
                     .collect::<Vec<io::Result<WalletZKey>>>()
             };
 
-            // Convert vector of results into result of vector, returning an error if any one of the keys failed the checks above
-            zkeys_result.into_iter().collect::<io::Result<_>>()?
+            // Convert vector of results into result of vector, returning an error if any
+            // one of the keys failed the checks above
+            zkeys_result
+                .into_iter()
+                .collect::<io::Result<_>>()?
         } else {
             // After version 6, we read the WalletZKey structs directly
             Vector::read(&mut reader, |r| WalletZKey::read(r))?
@@ -254,13 +273,13 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         })
     }
 
-    pub fn read<R: Read>(mut reader: R, config: &LightClientConfig<P>) -> io::Result<Self> {
+    pub fn read<R: Read>(
+        mut reader: R,
+        config: &LightClientConfig<P>,
+    ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
-            let e = format!(
-                "Don't know how to read wallet version {}. Do you have the latest version?",
-                version
-            );
+            let e = format!("Don't know how to read wallet version {}. Do you have the latest version?", version);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
@@ -309,7 +328,10 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -325,7 +347,8 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         // Write the seed
         writer.write_all(&self.seed)?;
 
-        // Flush after writing the seed, so in case of a disaster, we can still recover the seed.
+        // Flush after writing the seed, so in case of a disaster, we can still recover
+        // the seed.
         writer.flush()?;
 
         // Write all the wallet's keys
@@ -353,7 +376,10 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
     }
 
     pub fn get_all_extfvks(&self) -> Vec<ExtendedFullViewingKey> {
-        self.zkeys.iter().map(|zk| zk.extfvk.clone()).collect()
+        self.zkeys
+            .iter()
+            .map(|zk| zk.extfvk.clone())
+            .collect()
     }
 
     pub fn get_all_zaddresses(&self) -> Vec<String> {
@@ -372,10 +398,16 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
     }
 
     pub fn get_all_taddrs(&self) -> Vec<String> {
-        self.tkeys.iter().map(|tk| tk.address.clone()).collect::<Vec<_>>()
+        self.tkeys
+            .iter()
+            .map(|tk| tk.address.clone())
+            .collect::<Vec<_>>()
     }
 
-    pub fn have_spending_key(&self, ivk: &SaplingIvk) -> bool {
+    pub fn have_spending_key(
+        &self,
+        ivk: &SaplingIvk,
+    ) -> bool {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk.fvk.vk.ivk().to_repr() == ivk.to_repr())
@@ -383,7 +415,10 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
             .unwrap_or(false)
     }
 
-    pub fn get_extsk_for_address(&self, zaddress: &PaymentAddress) -> Option<ExtendedSpendingKey> {
+    pub fn get_extsk_for_address(
+        &self,
+        zaddress: &PaymentAddress,
+    ) -> Option<ExtendedSpendingKey> {
         self.zkeys
             .iter()
             .find(|zk| &zk.zaddress == zaddress)
@@ -391,7 +426,10 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
             .flatten()
     }
 
-    pub fn get_extsk_for_extfvk(&self, extfvk: &ExtendedFullViewingKey) -> Option<ExtendedSpendingKey> {
+    pub fn get_extsk_for_extfvk(
+        &self,
+        extfvk: &ExtendedFullViewingKey,
+    ) -> Option<ExtendedSpendingKey> {
         self.zkeys
             .iter()
             .find(|zk| zk.extfvk == *extfvk)
@@ -411,17 +449,16 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
 
         self.tkeys
             .iter()
-            .map(|tk| {
-                (
-                    tk.address.clone(),
-                    secp256k1::PublicKey::from_secret_key(&secp, &tk.key.unwrap()),
-                )
-            })
+            .map(|tk| (tk.address.clone(), secp256k1::PublicKey::from_secret_key(&secp, &tk.key.unwrap())))
             .collect()
     }
 
-    // If one of the last 'n' taddress was used, ensure we add the next HD taddress to the wallet.
-    pub fn ensure_hd_taddresses(&mut self, address: &str) {
+    // If one of the last 'n' taddress was used, ensure we add the next HD taddress
+    // to the wallet.
+    pub fn ensure_hd_taddresses(
+        &mut self,
+        address: &str,
+    ) {
         if GAP_RULE_UNUSED_ADDRESSES == 0 {
             return;
         }
@@ -436,25 +473,33 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
                 .collect::<Vec<String>>()
         };
 
-        match last_addresses.iter().position(|s| *s == *address) {
+        match last_addresses
+            .iter()
+            .position(|s| *s == *address)
+        {
             None => {
                 return;
-            }
+            },
             Some(pos) => {
-                //info!("Adding {} new zaddrs", (GAP_RULE_UNUSED_ADDRESSES - pos));
+                // info!("Adding {} new zaddrs", (GAP_RULE_UNUSED_ADDRESSES - pos));
                 // If it in the last unused, addresses, create that many more
-                for _ in 0..(GAP_RULE_UNUSED_ADDRESSES - pos) {
+                for _ in 0 .. (GAP_RULE_UNUSED_ADDRESSES - pos) {
                     // If the wallet is locked, this is a no-op. That is fine, since we really
-                    // need to only add new addresses when restoring a new wallet, when it will not be locked.
-                    // Also, if it is locked, the user can't create new addresses anyway.
+                    // need to only add new addresses when restoring a new wallet, when it will not
+                    // be locked. Also, if it is locked, the user can't create
+                    // new addresses anyway.
                     self.add_taddr();
                 }
-            }
+            },
         }
     }
 
-    // If one of the last 'n' zaddress was used, ensure we add the next HD zaddress to the wallet
-    pub fn ensure_hd_zaddresses(&mut self, address: &str) {
+    // If one of the last 'n' zaddress was used, ensure we add the next HD zaddress
+    // to the wallet
+    pub fn ensure_hd_zaddresses(
+        &mut self,
+        address: &str,
+    ) {
         if GAP_RULE_UNUSED_ADDRESSES == 0 {
             return;
         }
@@ -469,33 +514,36 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
                 .collect::<Vec<String>>()
         };
 
-        match last_addresses.iter().position(|s| *s == *address) {
+        match last_addresses
+            .iter()
+            .position(|s| *s == *address)
+        {
             None => {
                 return;
-            }
+            },
             Some(pos) => {
-                //info!("Adding {} new zaddrs", (GAP_RULE_UNUSED_ADDRESSES - pos));
+                // info!("Adding {} new zaddrs", (GAP_RULE_UNUSED_ADDRESSES - pos));
                 // If it in the last unused, addresses, create that many more
-                for _ in 0..(GAP_RULE_UNUSED_ADDRESSES - pos) {
+                for _ in 0 .. (GAP_RULE_UNUSED_ADDRESSES - pos) {
                     // If the wallet is locked, this is a no-op. That is fine, since we really
-                    // need to only add new addresses when restoring a new wallet, when it will not be locked.
-                    // Also, if it is locked, the user can't create new addresses anyway.
+                    // need to only add new addresses when restoring a new wallet, when it will not
+                    // be locked. Also, if it is locked, the user can't create
+                    // new addresses anyway.
                     self.add_zaddr();
                 }
-            }
+            },
         }
     }
 
-    pub const fn z_derivation_path(coin_type: u32, index: u32) -> [ChildIndex; 3] {
-        [
-            ChildIndex::Hardened(32),
-            ChildIndex::Hardened(coin_type),
-            ChildIndex::Hardened(index),
-        ]
+    pub const fn z_derivation_path(
+        coin_type: u32,
+        index: u32,
+    ) -> [ChildIndex; 3] {
+        [ChildIndex::Hardened(32), ChildIndex::Hardened(coin_type), ChildIndex::Hardened(index)]
     }
 
-    /// Adds a new z address to the wallet. This will derive a new address from the seed
-    /// at the next position and add it to the wallet.
+    /// Adds a new z address to the wallet. This will derive a new address from
+    /// the seed at the next position and add it to the wallet.
     /// NOTE: This does NOT rescan
     pub fn add_zaddr(&mut self) -> String {
         if !self.unlocked {
@@ -507,24 +555,32 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
             .zkeys
             .iter()
             .filter(|zk| zk.hdkey_num.is_some())
-            .max_by(|zk1, zk2| zk1.hdkey_num.unwrap().cmp(&zk2.hdkey_num.unwrap()))
+            .max_by(|zk1, zk2| {
+                zk1.hdkey_num
+                    .unwrap()
+                    .cmp(&zk2.hdkey_num.unwrap())
+            })
             .map_or(0, |zk| zk.hdkey_num.unwrap() + 1);
 
-        //it's okay to block_on here as there's no real IO in this call
+        // it's okay to block_on here as there's no real IO in this call
         let extsk = futures::executor::block_on(
             self.get_z_private_spending_key(&Self::z_derivation_path(self.config.get_coin_type(), pos)),
         )
-        //only error available is if the wallet is locked but we already checked it
+        // only error available is if the wallet is locked but we already checked it
         .unwrap();
 
-        // let zaddr = encode_payment_address(self.config.hrp_sapling_address(), &address);
+        // let zaddr = encode_payment_address(self.config.hrp_sapling_address(),
+        // &address);
         let newkey = WalletZKey::new_hdkey(pos, extsk);
         self.zkeys.push(newkey.clone());
 
         encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
     }
 
-    pub const fn t_derivation_path(coin_type: u32, index: u32) -> [ChildIndex; 5] {
+    pub const fn t_derivation_path(
+        coin_type: u32,
+        index: u32,
+    ) -> [ChildIndex; 5] {
         [
             ChildIndex::Hardened(44),
             ChildIndex::Hardened(coin_type),
@@ -534,8 +590,8 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         ]
     }
 
-    /// Add a new t address to the wallet. This will derive a new address from the seed
-    /// at the next position.
+    /// Add a new t address to the wallet. This will derive a new address from
+    /// the seed at the next position.
     /// NOTE: This will not rescan the wallet
     pub fn add_taddr(&mut self) -> String {
         if !self.unlocked {
@@ -547,14 +603,18 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
             .tkeys
             .iter()
             .filter(|sk| sk.hdkey_num.is_some())
-            .max_by(|sk1, sk2| sk1.hdkey_num.unwrap().cmp(&sk2.hdkey_num.unwrap()))
+            .max_by(|sk1, sk2| {
+                sk1.hdkey_num
+                    .unwrap()
+                    .cmp(&sk2.hdkey_num.unwrap())
+            })
             .map_or(0, |sk| sk.hdkey_num.unwrap() + 1);
 
-        //no real IO done in this call, so no worries about the futures executor
+        // no real IO done in this call, so no worries about the futures executor
         let skey = futures::executor::block_on(
             self.get_t_secret_key(&Self::t_derivation_path(self.config.get_coin_type(), pos)),
         )
-        //only error possible is the wallet is locked but we checked it already
+        // only error possible is the wallet is locked but we checked it already
         .unwrap();
 
         let key = WalletTKey::new_hdkey(&self.config.base58_pubkey_address(), pos, skey);
@@ -564,7 +624,8 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         address
     }
 
-    // Get all z-address private keys. Returns a Vector of (address, privatekey, viewkey)
+    // Get all z-address private keys. Returns a Vector of (address, privatekey,
+    // viewkey)
     pub fn get_z_private_keys(&self) -> Vec<(String, String, String)> {
         let keys = self
             .zkeys
@@ -581,11 +642,7 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
 
                 let vkey = encode_extended_full_viewing_key(self.config.hrp_sapling_viewing_key(), &k.extfvk);
 
-                (
-                    encode_payment_address(self.config.hrp_sapling_address(), &k.zaddress),
-                    pkey,
-                    vkey,
-                )
+                (encode_payment_address(self.config.hrp_sapling_address(), &k.zaddress), pkey, vkey)
             })
             .collect::<Vec<(String, String, String)>>();
 
@@ -596,11 +653,20 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
     pub fn get_t_secret_keys(&self) -> Vec<(String, String)> {
         self.tkeys
             .iter()
-            .map(|sk| (sk.address.clone(), sk.sk_as_string(&self.config).unwrap_or_default()))
+            .map(|sk| {
+                (
+                    sk.address.clone(),
+                    sk.sk_as_string(&self.config)
+                        .unwrap_or_default(),
+                )
+            })
             .collect::<Vec<(String, String)>>()
     }
 
-    pub fn encrypt(&mut self, passwd: String) -> io::Result<()> {
+    pub fn encrypt(
+        &mut self,
+        passwd: String,
+    ) -> io::Result<()> {
         if self.encrypted {
             return Err(io::Error::new(ErrorKind::AlreadyExists, "Wallet is already encrypted"));
         }
@@ -659,7 +725,10 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         Ok(())
     }
 
-    pub fn unlock(&mut self, passwd: String) -> io::Result<()> {
+    pub fn unlock(
+        &mut self,
+        passwd: String,
+    ) -> io::Result<()> {
         if !self.encrypted {
             return Err(Error::new(ErrorKind::AlreadyExists, "Wallet is not encrypted"));
         }
@@ -675,15 +744,12 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         let seed = match secretbox::open(&self.enc_seed, &nonce, &key) {
             Ok(s) => s,
             Err(_) => {
-                return Err(io::Error::new(
-                    ErrorKind::InvalidData,
-                    "Decryption failed. Is your password correct?",
-                ));
-            }
+                return Err(io::Error::new(ErrorKind::InvalidData, "Decryption failed. Is your password correct?"));
+            },
         };
 
-        // Now that we have the seed, we'll generate the extsks and tkeys, and verify the fvks and addresses
-        // respectively match
+        // Now that we have the seed, we'll generate the extsks and tkeys, and verify
+        // the fvks and addresses respectively match
 
         // The seed bytes is the raw entropy. To pass it to HD wallet generation,
         // we need to get the 64 byte bip39 entropy
@@ -710,9 +776,12 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         Ok(())
     }
 
-    // Removing encryption means unlocking it and setting the self.encrypted = false,
-    // permanantly removing the encryption
-    pub fn remove_encryption(&mut self, passwd: String) -> io::Result<()> {
+    // Removing encryption means unlocking it and setting the self.encrypted =
+    // false, permanantly removing the encryption
+    pub fn remove_encryption(
+        &mut self,
+        passwd: String,
+    ) -> io::Result<()> {
         if !self.encrypted {
             return Err(Error::new(ErrorKind::AlreadyExists, "Wallet is not encrypted"));
         }
@@ -736,7 +805,8 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
         // Permanantly remove the encryption
         self.encrypted = false;
         self.nonce = vec![];
-        self.enc_seed.copy_from_slice(&[0u8; 48]);
+        self.enc_seed
+            .copy_from_slice(&[0u8; 48]);
 
         Ok(())
     }
@@ -750,14 +820,17 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
     }
 
     /// STATIC METHODS
-    pub fn address_from_pubkeyhash(&self, ta: Option<TransparentAddress>) -> Option<String> {
+    pub fn address_from_pubkeyhash(
+        &self,
+        ta: Option<TransparentAddress>,
+    ) -> Option<String> {
         match ta {
             Some(TransparentAddress::PublicKey(hash)) => {
                 Some(hash.to_base58check(&self.config.base58_pubkey_address(), &[]))
-            }
+            },
             Some(TransparentAddress::Script(hash)) => {
                 Some(hash.to_base58check(&self.config.base58_script_address(), &[]))
-            }
+            },
             _ => None,
         }
     }
@@ -769,21 +842,21 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
     ) -> (ExtendedSpendingKey, ExtendedFullViewingKey, PaymentAddress) {
         assert_eq!(bip39_seed.len(), 64);
 
-        let extsk: ExtendedSpendingKey = ExtendedSpendingKey::from_path(
-            &ExtendedSpendingKey::master(bip39_seed),
-            &[
-                ChildIndex::Hardened(32),
-                ChildIndex::Hardened(config.get_coin_type()),
-                ChildIndex::Hardened(pos),
-            ],
-        );
+        let extsk: ExtendedSpendingKey = ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(bip39_seed), &[
+            ChildIndex::Hardened(32),
+            ChildIndex::Hardened(config.get_coin_type()),
+            ChildIndex::Hardened(pos),
+        ]);
         let extfvk = ExtendedFullViewingKey::from(&extsk);
         let address = extfvk.default_address().1;
 
         (extsk, extfvk, address)
     }
 
-    pub fn is_shielded_address(addr: &String, config: &LightClientConfig<P>) -> bool {
+    pub fn is_shielded_address(
+        addr: &String,
+        config: &LightClientConfig<P>,
+    ) -> bool {
         match address::RecipientAddress::decode(&config.get_params(), addr) {
             Some(address::RecipientAddress::Shielded(_)) => true,
             _ => false,
@@ -794,11 +867,11 @@ impl<P: consensus::Parameters + Send + Sync+ 'static> InMemoryKeys<P> {
 #[derive(Debug)]
 pub enum InMemoryKeysError {
     WalletLocked,
-    //UnableToGetDefaultZAddr,
+    // UnableToGetDefaultZAddr,
 }
 
 #[async_trait::async_trait]
-impl <P: consensus::Parameters + Send + Sync+ 'static> InsecureKeystore for InMemoryKeys<P> {
+impl<P: consensus::Parameters + Send + Sync + 'static> InsecureKeystore for InMemoryKeys<P> {
     type Error = InMemoryKeysError;
 
     async fn get_seed_phrase(&self) -> Result<String, Self::Error> {
@@ -809,20 +882,23 @@ impl <P: consensus::Parameters + Send + Sync+ 'static> InsecureKeystore for InMe
         }
     }
 
-    async fn get_z_private_spending_key(&self, path: &[ChildIndex]) -> Result<ExtendedSpendingKey, Self::Error> {
+    async fn get_z_private_spending_key(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<ExtendedSpendingKey, Self::Error> {
         if !self.unlocked {
             return Err(InMemoryKeysError::WalletLocked);
         }
 
         let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&self.seed, Language::English).unwrap(), "");
 
-        Ok(ExtendedSpendingKey::from_path(
-            &ExtendedSpendingKey::master(bip39_seed.as_bytes()),
-            path,
-        ))
+        Ok(ExtendedSpendingKey::from_path(&ExtendedSpendingKey::master(bip39_seed.as_bytes()), path))
     }
 
-    async fn get_t_secret_key(&self, path: &[ChildIndex]) -> Result<secp256k1::SecretKey, Self::Error> {
+    async fn get_t_secret_key(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<secp256k1::SecretKey, Self::Error> {
         use crate::lightwallet::extended_key::{ExtendedPrivKey, KeyIndex};
 
         if !self.unlocked {
@@ -831,7 +907,7 @@ impl <P: consensus::Parameters + Send + Sync+ 'static> InsecureKeystore for InMe
 
         let bip39_seed = bip39::Seed::new(&Mnemonic::from_entropy(&self.seed, Language::English).unwrap(), "");
 
-        //taken from ChildIndex private function
+        // taken from ChildIndex private function
         fn to_index(index: &ChildIndex) -> u32 {
             match *index {
                 ChildIndex::Hardened(i) => i + (1 << 31),
@@ -850,28 +926,36 @@ impl <P: consensus::Parameters + Send + Sync+ 'static> InsecureKeystore for InMe
     }
 }
 
-impl<'this,P: consensus::Parameters + Send + Sync + 'static> KeystoreBuilderLifetime<'this> for InMemoryKeys<P> {
+impl<'this, P: consensus::Parameters + Send + Sync + 'static> KeystoreBuilderLifetime<'this> for InMemoryKeys<P> {
     type Builder = InMemoryBuilder<'this, P>;
 }
 
 #[async_trait::async_trait]
-impl <P: consensus::Parameters + Send + Sync+ 'static>Keystore for InMemoryKeys<P> {
+impl<P: consensus::Parameters + Send + Sync + 'static> Keystore for InMemoryKeys<P> {
     type Error = InMemoryKeysError;
 
-    async fn get_t_pubkey(&self, path: &[ChildIndex]) -> Result<secp256k1::PublicKey, Self::Error> {
-        self.get_t_secret_key(path).await.map(|sk| {
-            let secp = secp256k1::Secp256k1::signing_only();
-            secp256k1::PublicKey::from_secret_key(&secp, &sk)
-        })
+    async fn get_t_pubkey(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<secp256k1::PublicKey, Self::Error> {
+        self.get_t_secret_key(path)
+            .await
+            .map(|sk| {
+                let secp = secp256k1::Secp256k1::signing_only();
+                secp256k1::PublicKey::from_secret_key(&secp, &sk)
+            })
     }
 
-    async fn get_z_payment_address(&self, path: &[ChildIndex]) -> Result<PaymentAddress, Self::Error> {
-        self.get_z_private_spending_key(path).await.and_then(|extsk| {
-            let extfvk = ExtendedFullViewingKey::from(&extsk);
-            Ok(extfvk
-                .default_address()
-                .1)
-        })
+    async fn get_z_payment_address(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<PaymentAddress, Self::Error> {
+        self.get_z_private_spending_key(path)
+            .await
+            .and_then(|extsk| {
+                let extfvk = ExtendedFullViewingKey::from(&extsk);
+                Ok(extfvk.default_address().1)
+            })
     }
 
     fn txbuilder(

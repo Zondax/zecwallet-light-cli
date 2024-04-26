@@ -1,18 +1,3 @@
-use crate::compact_formats::TreeState;
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::keys::Builder;
-use crate::lightwallet::wallettkey::WalletTKey;
-use crate::{
-    blaze::fetch_full_tx::FetchFullTxns,
-    lightclient::lightclient_config::LightClientConfig,
-    lightwallet::{
-        data::SpendableNote,
-        walletzkey::{WalletZKey, WalletZKeyType},
-    },
-};
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use futures::Future;
-use log::{error, info, warn};
 use std::convert::TryFrom;
 use std::{
     cmp,
@@ -21,6 +6,10 @@ use std::{
     sync::{atomic::AtomicU64, mpsc, Arc},
     time::SystemTime,
 };
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use futures::Future;
+use log::{error, info, warn};
 use tap::Pipe;
 use tokio::sync::RwLock;
 use zcash_client_backend::{
@@ -41,6 +30,18 @@ use self::{
     keys::{InMemoryKeys, Keystores, TxProver},
     message::Message,
     wallet_txns::WalletTxns,
+};
+use crate::compact_formats::TreeState;
+use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::keys::Builder;
+use crate::lightwallet::wallettkey::WalletTKey;
+use crate::{
+    blaze::fetch_full_tx::FetchFullTxns,
+    lightclient::lightclient_config::LightClientConfig,
+    lightwallet::{
+        data::SpendableNote,
+        walletzkey::{WalletZKey, WalletZKeyType},
+    },
 };
 
 pub(crate) mod data;
@@ -71,23 +72,13 @@ pub struct SendProgress {
 
 impl Default for SendProgress {
     fn default() -> Self {
-        Self {
-            id: 0,
-            is_send_in_progress: false,
-            progress: 0,
-            total: 0,
-            last_error: None,
-            last_txid: None,
-        }
+        Self { id: 0, is_send_in_progress: false, progress: 0, total: 0, last_error: None, last_txid: None }
     }
 }
 
 impl SendProgress {
     fn new(id: u32) -> Self {
-        SendProgress {
-            id,
-            ..Default::default()
-        }
+        SendProgress { id, ..Default::default() }
     }
 }
 
@@ -112,10 +103,7 @@ pub struct WalletOptions {
 
 impl Default for WalletOptions {
     fn default() -> Self {
-        WalletOptions {
-            download_memos: MemoDownloadOption::WalletMemos,
-            spam_threshold: -1,
-        }
+        WalletOptions { download_memos: MemoDownloadOption::WalletMemos, spam_threshold: -1 }
     }
 }
 
@@ -132,26 +120,19 @@ impl WalletOptions {
             1 => MemoDownloadOption::WalletMemos,
             2 => MemoDownloadOption::AllMemos,
             v => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("Bad download option {}", v),
-                ));
-            }
+                return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Bad download option {}", v)));
+            },
         };
 
-        let spam_threshold = if version <= 1 {
-            -1
-        } else {
-            reader.read_i64::<LittleEndian>()?
-        };
+        let spam_threshold = if version <= 1 { -1 } else { reader.read_i64::<LittleEndian>()? };
 
-        Ok(Self {
-            download_memos,
-            spam_threshold,
-        })
+        Ok(Self { download_memos, spam_threshold })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         // Write the version
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -192,7 +173,11 @@ pub struct LightWallet<P> {
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
-    pub fn with_keystore(config: LightClientConfig<P>, height: u64, keystore: impl Into<Keystores<P>>) -> Self {
+    pub fn with_keystore(
+        config: LightClientConfig<P>,
+        height: u64,
+        keystore: impl Into<Keystores<P>>,
+    ) -> Self {
         Self {
             keys: Arc::new(RwLock::new(keystore.into())),
             txns: Default::default(),
@@ -206,14 +191,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    // Before version 20, witnesses didn't store their height, so we need to update them.
+    // Before version 20, witnesses didn't store their height, so we need to update
+    // them.
     pub async fn set_witness_block_heights(&mut self) {
         let top_height = self.last_scanned_height().await;
-        self.txns.write().await.current.iter_mut().for_each(|(_, wtx)| {
-            wtx.notes.iter_mut().for_each(|nd| {
-                nd.witnesses.top_height = top_height;
+        self.txns
+            .write()
+            .await
+            .current
+            .iter_mut()
+            .for_each(|(_, wtx)| {
+                wtx.notes.iter_mut().for_each(|nd| {
+                    nd.witnesses.top_height = top_height;
+                });
             });
-        });
     }
 
     pub fn txns(&self) -> Arc<RwLock<WalletTxns>> {
@@ -228,34 +219,63 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         self.keys.clone()
     }
 
-    pub async fn set_blocks(&self, new_blocks: Vec<BlockData>) {
+    pub async fn set_blocks(
+        &self,
+        new_blocks: Vec<BlockData>,
+    ) {
         let mut blocks = self.blocks.write().await;
         blocks.clear();
         blocks.extend_from_slice(&new_blocks[..]);
     }
 
-    /// Return a copy of the blocks currently in the wallet, needed to process possible reorgs
+    /// Return a copy of the blocks currently in the wallet, needed to process
+    /// possible reorgs
     pub async fn get_blocks(&self) -> Vec<BlockData> {
-        self.blocks.read().await.iter().map(|b| b.clone()).collect()
+        self.blocks
+            .read()
+            .await
+            .iter()
+            .map(|b| b.clone())
+            .collect()
     }
 
-    pub fn note_address(hrp: &str, note: &SaplingNoteData) -> Option<String> {
-        match note.ivk.to_payment_address(note.diversifier) {
+    pub fn note_address(
+        hrp: &str,
+        note: &SaplingNoteData,
+    ) -> Option<String> {
+        match note
+            .ivk
+            .to_payment_address(note.diversifier)
+        {
             Some(pa) => Some(encode_payment_address(hrp, &pa)),
             None => None,
         }
     }
 
-    pub async fn set_download_memo(&self, value: MemoDownloadOption) {
-        self.wallet_options.write().await.download_memos = value;
+    pub async fn set_download_memo(
+        &self,
+        value: MemoDownloadOption,
+    ) {
+        self.wallet_options
+            .write()
+            .await
+            .download_memos = value;
     }
 
-    pub async fn set_spam_filter_threshold(&self, value: i64) {
-        self.wallet_options.write().await.spam_threshold = value;
+    pub async fn set_spam_filter_threshold(
+        &self,
+        value: i64,
+    ) {
+        self.wallet_options
+            .write()
+            .await
+            .spam_threshold = value;
     }
 
     pub async fn get_birthday(&self) -> u64 {
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
+        let birthday = self
+            .birthday
+            .load(std::sync::atomic::Ordering::SeqCst);
         if birthday == 0 {
             self.get_first_tx_block().await
         } else {
@@ -263,7 +283,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    pub async fn set_latest_zec_price(&self, price: f64) {
+    pub async fn set_latest_zec_price(
+        &self,
+        price: f64,
+    ) {
         if price <= 0 as f64 {
             warn!("Tried to set a bad current zec price {}", price);
             return;
@@ -279,7 +302,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     // Set the previous send's status as an error
-    async fn set_send_error(&self, e: String) {
+    async fn set_send_error(
+        &self,
+        e: String,
+    ) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;
@@ -287,7 +313,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     // Set the previous send's status as success
-    async fn set_send_success(&self, txid: String) {
+    async fn set_send_success(
+        &self,
+        txid: String,
+    ) {
         let mut p = self.send_progress.write().await;
 
         p.is_send_in_progress = false;
@@ -303,9 +332,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let _ = std::mem::replace(&mut *g, SendProgress::new(next_id));
     }
 
-    // Get the first block that this wallet has a tx in. This is often used as the wallet's "birthday"
-    // If there are no Txns, then the actual birthday (which is recorder at wallet creation) is returned
-    // If no birthday was recorded, return the sapling activation height
+    // Get the first block that this wallet has a tx in. This is often used as the
+    // wallet's "birthday" If there are no Txns, then the actual birthday (which
+    // is recorder at wallet creation) is returned If no birthday was recorded,
+    // return the sapling activation height
     pub async fn get_first_tx_block(&self) -> u64 {
         // Find the first transaction
         let earliest_block = self
@@ -317,13 +347,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .map(|wtx| u64::from(wtx.block))
             .min();
 
-        let birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
+        let birthday = self
+            .birthday
+            .load(std::sync::atomic::Ordering::SeqCst);
         earliest_block // Returns optional, so if there's no txns, it'll get the activation height
             .unwrap_or(cmp::max(birthday, self.config.sapling_activation_height))
     }
 
-    fn adjust_wallet_birthday(&self, new_birthday: u64) {
-        let mut wallet_birthday = self.birthday.load(std::sync::atomic::Ordering::SeqCst);
+    fn adjust_wallet_birthday(
+        &self,
+        new_birthday: u64,
+    ) {
+        let mut wallet_birthday = self
+            .birthday
+            .load(std::sync::atomic::Ordering::SeqCst);
         if new_birthday < wallet_birthday {
             wallet_birthday = cmp::max(new_birthday, self.config.sapling_activation_height);
             self.birthday
@@ -331,9 +368,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    /// Clears all the downloaded blocks and resets the state back to the initial block.
-    /// After this, the wallet's initial state will need to be set
-    /// and the wallet will need to be rescanned
+    /// Clears all the downloaded blocks and resets the state back to the
+    /// initial block. After this, the wallet's initial state will need to
+    /// be set and the wallet will need to be rescanned
     pub async fn clear_all(&self) {
         let mut blocks_guard = self.blocks.write().await;
         let mut txns_guard = self.txns.write().await;
@@ -342,8 +379,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         txns_guard.clear();
     }
 
-    /// Clears all the downloaded blocks and resets the state to the specified block.
-    pub async fn clear_all_and_set_initial_block(&self, height: u64, hash: &str, _tree: &str) {
+    /// Clears all the downloaded blocks and resets the state to the specified
+    /// block.
+    pub async fn clear_all_and_set_initial_block(
+        &self,
+        height: u64,
+        hash: &str,
+        _tree: &str,
+    ) {
         let mut blocks_guard = self.blocks.write().await;
         let mut txns_guard = self.txns.write().await;
 
@@ -353,7 +396,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         blocks_guard.push(BlockData::new_with(height, hash));
     }
 
-    pub async fn set_initial_block(&self, height: u64, hash: &str, _sapling_tree: &str) -> bool {
+    pub async fn set_initial_block(
+        &self,
+        height: u64,
+        hash: &str,
+        _sapling_tree: &str,
+    ) -> bool {
         let mut blocks = self.blocks.write().await;
         if !blocks.is_empty() {
             return false;
@@ -383,17 +431,26 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     async fn get_target_height(&self) -> Option<u32> {
-        self.blocks.read().await.first().map(|block| block.height as u32 + 1)
+        self.blocks
+            .read()
+            .await
+            .first()
+            .map(|block| block.height as u32 + 1)
     }
 
-    /// Determines the target height for a transaction, and the offset from which to
-    /// select anchors, based on the current synchronised block chain.
+    /// Determines the target height for a transaction, and the offset from
+    /// which to select anchors, based on the current synchronised block
+    /// chain.
     async fn get_target_height_and_anchor_offset(&self) -> Option<(u32, usize)> {
         match {
             let blocks = self.blocks.read().await;
             (
-                blocks.last().map(|block| block.height as u32),
-                blocks.first().map(|block| block.height as u32),
+                blocks
+                    .last()
+                    .map(|block| block.height as u32),
+                blocks
+                    .first()
+                    .map(|block| block.height as u32),
             )
         } {
             (Some(min_height), Some(max_height)) => {
@@ -402,19 +459,28 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 // Select an anchor ANCHOR_OFFSET back from the target block,
                 // unless that would be before the earliest block we have.
                 let anchor_height = cmp::max(
-                    target_height.saturating_sub(*self.config.anchor_offset.last().unwrap()),
+                    target_height.saturating_sub(
+                        *self
+                            .config
+                            .anchor_offset
+                            .last()
+                            .unwrap(),
+                    ),
                     min_height,
                 );
 
                 Some((target_height, (target_height - anchor_height) as usize))
-            }
+            },
             _ => None,
         }
     }
 
     /// Get the height of the anchor block
     pub async fn get_anchor_height(&self) -> u32 {
-        match self.get_target_height_and_anchor_offset().await {
+        match self
+            .get_target_height_and_anchor_offset()
+            .await
+        {
             Some((height, anchor_offset)) => height - anchor_offset as u32 - 1,
             None => return 0,
         }
@@ -427,7 +493,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    pub async fn zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn zbalance(
+        &self,
+        addr: Option<String>,
+    ) -> u64 {
         self.txns
             .read()
             .await
@@ -436,22 +505,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .map(|tx| {
                 tx.notes
                     .iter()
-                    .filter(|nd| match addr.as_ref() {
-                        Some(a) => {
-                            *a == encode_payment_address(
-                                self.config.hrp_sapling_address(),
-                                &nd.ivk.to_payment_address(nd.diversifier).unwrap(),
-                            )
-                        }
-                        None => true,
-                    })
-                    .map(|nd| {
-                        if nd.spent.is_none() && nd.unconfirmed_spent.is_none() {
-                            nd.note.value
-                        } else {
-                            0
+                    .filter(|nd| {
+                        match addr.as_ref() {
+                            Some(a) => {
+                                *a == encode_payment_address(
+                                    self.config.hrp_sapling_address(),
+                                    &nd.ivk
+                                        .to_payment_address(nd.diversifier)
+                                        .unwrap(),
+                                )
+                            },
+                            None => true,
                         }
                     })
+                    .map(|nd| if nd.spent.is_none() && nd.unconfirmed_spent.is_none() { nd.note.value } else { 0 })
                     .sum::<u64>()
             })
             .sum::<u64>()
@@ -464,24 +531,36 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
             .current
             .values()
-            .flat_map(|tx| tx.utxos.iter().filter(|utxo| utxo.spent.is_none()))
+            .flat_map(|tx| {
+                tx.utxos
+                    .iter()
+                    .filter(|utxo| utxo.spent.is_none())
+            })
             .map(|utxo| utxo.clone())
             .collect::<Vec<Utxo>>()
     }
 
-    pub async fn tbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn tbalance(
+        &self,
+        addr: Option<String>,
+    ) -> u64 {
         self.get_utxos()
             .await
             .iter()
-            .filter(|utxo| match addr.as_ref() {
-                Some(a) => utxo.address == *a,
-                None => true,
+            .filter(|utxo| {
+                match addr.as_ref() {
+                    Some(a) => utxo.address == *a,
+                    None => true,
+                }
             })
             .map(|utxo| utxo.value)
             .sum::<u64>()
     }
 
-    pub async fn verified_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn verified_zbalance(
+        &self,
+        addr: Option<String>,
+    ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
         self.txns
@@ -494,14 +573,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     tx.notes
                         .iter()
                         .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                        .filter(|nd| match addr.as_ref() {
-                            Some(a) => {
-                                *a == encode_payment_address(
-                                    self.config.hrp_sapling_address(),
-                                    &nd.ivk.to_payment_address(nd.diversifier).unwrap(),
-                                )
+                        .filter(|nd| {
+                            match addr.as_ref() {
+                                Some(a) => {
+                                    *a == encode_payment_address(
+                                        self.config.hrp_sapling_address(),
+                                        &nd.ivk
+                                            .to_payment_address(nd.diversifier)
+                                            .unwrap(),
+                                    )
+                                },
+                                None => true,
                             }
-                            None => true,
                         })
                         .map(|nd| nd.note.value)
                         .sum::<u64>()
@@ -512,10 +595,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .sum::<u64>()
     }
 
-    // Add the spent_at_height for each sapling note that has been spent. This field was added in wallet version 8,
-    // so for older wallets, it will need to be added
+    // Add the spent_at_height for each sapling note that has been spent. This field
+    // was added in wallet version 8, so for older wallets, it will need to be
+    // added
     pub async fn fix_spent_at_height(&self) {
-        // First, build an index of all the txids and the heights at which they were spent.
+        // First, build an index of all the txids and the heights at which they were
+        // spent.
         let spent_txid_map: HashMap<_, _> = self
             .txns
             .read()
@@ -526,47 +611,63 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .collect();
 
         // Go over all the sapling notes that might need updating
-        self.txns.write().await.current.values_mut().for_each(|wtx| {
-            wtx.notes
-                .iter_mut()
-                .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
-                .for_each(|nd| {
-                    let txid = nd.spent.unwrap().0;
-                    if let Some(height) = spent_txid_map.get(&txid).map(|b| *b) {
-                        nd.spent = Some((txid, height.into()));
-                    }
-                })
-        });
+        self.txns
+            .write()
+            .await
+            .current
+            .values_mut()
+            .for_each(|wtx| {
+                wtx.notes
+                    .iter_mut()
+                    .filter(|nd| nd.spent.is_some() && nd.spent.unwrap().1 == 0)
+                    .for_each(|nd| {
+                        let txid = nd.spent.unwrap().0;
+                        if let Some(height) = spent_txid_map.get(&txid).map(|b| *b) {
+                            nd.spent = Some((txid, height.into()));
+                        }
+                    })
+            });
 
         // Go over all the Utxos that might need updating
-        self.txns.write().await.current.values_mut().for_each(|wtx| {
-            wtx.utxos
-                .iter_mut()
-                .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
-                .for_each(|utxo| {
-                    utxo.spent_at_height = spent_txid_map.get(&utxo.spent.unwrap()).map(|b| u32::from(*b) as i32);
-                })
-        });
+        self.txns
+            .write()
+            .await
+            .current
+            .values_mut()
+            .for_each(|wtx| {
+                wtx.utxos
+                    .iter_mut()
+                    .filter(|utxo| utxo.spent.is_some() && utxo.spent_at_height.is_none())
+                    .for_each(|utxo| {
+                        utxo.spent_at_height = spent_txid_map
+                            .get(&utxo.spent.unwrap())
+                            .map(|b| u32::from(*b) as i32);
+                    })
+            });
     }
 
     pub async fn in_memory_keys<'this>(
-        &'this self,
+        &'this self
     ) -> Result<impl std::ops::Deref<Target = InMemoryKeys<P>> + 'this, io::Error> {
         let keys = self.keys.read().await;
-        tokio::sync::RwLockReadGuard::try_map(keys, |keys| match keys {
-            Keystores::Memory(keys) => Some(keys),
-            _ => None,
+        tokio::sync::RwLockReadGuard::try_map(keys, |keys| {
+            match keys {
+                Keystores::Memory(keys) => Some(keys),
+                _ => None,
+            }
         })
         .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
     }
 
     pub async fn in_memory_keys_mut<'this>(
-        &'this self,
+        &'this self
     ) -> Result<impl std::ops::DerefMut<Target = InMemoryKeys<P>> + 'this, io::Error> {
         let keys = self.keys.write().await;
-        tokio::sync::RwLockWriteGuard::try_map(keys, |keys| match keys {
-            Keystores::Memory(keys) => Some(keys),
-            _ => None,
+        tokio::sync::RwLockWriteGuard::try_map(keys, |keys| {
+            match keys {
+                Keystores::Memory(keys) => Some(keys),
+                _ => None,
+            }
         })
         .map_err(|_| io::Error::new(ErrorKind::Unsupported, "incompatible keystore requested"))
     }
@@ -597,13 +698,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         })
     }
 
-    pub async fn read<R: Read>(mut reader: R, config: &LightClientConfig<P>) -> io::Result<Self> {
+    pub async fn read<R: Read>(
+        mut reader: R,
+        config: &LightClientConfig<P>,
+    ) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::serialized_version() {
-            let e = format!(
-                "Don't know how to read wallet version {}. Do you have the latest version?",
-                version
-            );
+            let e = format!("Don't know how to read wallet version {}. Do you have the latest version?", version);
             error!("{}", e);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
@@ -624,29 +725,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             blocks = blocks.into_iter().rev().collect();
         }
 
-        let mut txns = if version <= 14 {
-            WalletTxns::read_old(&mut reader)
-        } else {
-            WalletTxns::read(&mut reader)
-        }?;
+        let mut txns = if version <= 14 { WalletTxns::read_old(&mut reader) } else { WalletTxns::read(&mut reader) }?;
 
         let chain_name = utils::read_string(&mut reader)?;
 
         if chain_name != config.chain_name {
             return Err(Error::new(
                 ErrorKind::InvalidData,
-                format!(
-                    "Wallet chain name {} doesn't match expected {}",
-                    chain_name, config.chain_name
-                ),
+                format!("Wallet chain name {} doesn't match expected {}", chain_name, config.chain_name),
             ));
         }
 
-        let wallet_options = if version <= 23 {
-            WalletOptions::default()
-        } else {
-            WalletOptions::read(&mut reader)?
-        };
+        let wallet_options = if version <= 23 { WalletOptions::default() } else { WalletOptions::read(&mut reader)? };
 
         let birthday = reader.read_u64::<LittleEndian>()?;
 
@@ -669,16 +759,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         // If version <= 8, adjust the "is_spendable" status of each note data
         if version <= 8 {
             // Collect all spendable keys
-            let spendable_keys = keys.get_all_spendable_ivks().await.collect();
+            let spendable_keys = keys
+                .get_all_spendable_ivks()
+                .await
+                .collect();
 
             txns.adjust_spendable_status(spendable_keys);
         }
 
-        let price = if version <= 13 {
-            WalletZecPriceInfo::new()
-        } else {
-            WalletZecPriceInfo::read(&mut reader)?
-        };
+        let price = if version <= 13 { WalletZecPriceInfo::new() } else { WalletZecPriceInfo::read(&mut reader)? };
 
         let mut lw = Self {
             keys: Arc::new(RwLock::new(keys)),
@@ -705,16 +794,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         Ok(lw)
     }
 
-    pub async fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub async fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         {
-            //enclose in scope to avoid holding read lock after these checks
+            // enclose in scope to avoid holding read lock after these checks
             let keys = self.keys().read().await;
 
             if !keys.writable() {
-                return Err(Error::new(
-                    ErrorKind::InvalidInput,
-                    format!("Wallet wasn't ready to be written."),
-                ));
+                return Err(Error::new(ErrorKind::InvalidInput, format!("Wallet wasn't ready to be written.")));
             }
 
             // Write the version
@@ -726,11 +815,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
         Vector::write(&mut writer, &self.blocks.read().await, |w, b| b.write(w))?;
 
-        self.txns.read().await.write(&mut writer)?;
+        self.txns
+            .read()
+            .await
+            .write(&mut writer)?;
 
         utils::write_string(&mut writer, &self.config.chain_name)?;
 
-        self.wallet_options.read().await.write(&mut writer)?;
+        self.wallet_options
+            .read()
+            .await
+            .write(&mut writer)?;
 
         // While writing the birthday, get it from the fn so we recalculate it properly
         // in case of rescans etc...
@@ -745,7 +840,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         })?;
 
         // Price info
-        self.price.read().await.write(&mut writer)?;
+        self.price
+            .read()
+            .await
+            .write(&mut writer)?;
 
         Ok(())
     }
@@ -775,9 +873,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .pipe(|amt| Amount::from_u64(amt).unwrap());
 
         // Check how much we've selected
-        let transparent_value_selected = utxos.iter().fold(Amount::zero(), |prev, utxo| {
-            (prev + Amount::from_u64(utxo.value).unwrap()).unwrap()
-        });
+        let transparent_value_selected = utxos
+            .iter()
+            .fold(Amount::zero(), |prev, utxo| (prev + Amount::from_u64(utxo.value).unwrap()).unwrap());
 
         // If we are allowed only transparent funds or we've selected enough then return
         if transparent_only || (transparent_value_selected - current_fee).unwrap() >= total_value {
@@ -795,14 +893,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 .await
                 .current
                 .iter()
-                .flat_map(|(txid, tx)| tx.notes.iter().map(move |note| (*txid, note)))
+                .flat_map(|(txid, tx)| {
+                    tx.notes
+                        .iter()
+                        .map(move |note| (*txid, note))
+                })
                 .filter(|(_, note)| note.note.value > 0)
                 // Filter out notes that are already spent
                 .filter(|(_, note)| note.spent.is_none() && note.unconfirmed_spent.is_none())
             {
                 // select the note if we have the spending key for it
                 if keys.have_spending_key(&note.ivk).await {
-                    //None will return if it's actually not spendable
+                    // None will return if it's actually not spendable
                     if let Some(spendable) = SpendableNote::from(txid, note, *anchor_offset as usize, &note.ivk) {
                         candidate_notes.push(spendable);
                     }
@@ -828,9 +930,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     }
                 })
                 .collect::<Vec<_>>();
-            let sapling_value_selected = notes.iter().fold(Amount::zero(), |prev, sn| {
-                (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap()
-            });
+            let sapling_value_selected = notes
+                .iter()
+                .fold(Amount::zero(), |prev, sn| (prev + Amount::from_u64(sn.note.value).unwrap()).unwrap());
 
             let fees = self
                 .fee(utxos.len(), tranparent_outputs_n, notes.len(), sapling_outputs_n, 0)
@@ -850,8 +952,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn is_unlocked_for_spending(&self) -> bool {
         match self.in_memory_keys().await {
             Ok(ks) => ks.is_unlocked_for_spending(),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => true,
         }
     }
@@ -859,13 +961,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn is_encrypted(&self) -> bool {
         match self.in_memory_keys().await {
             Ok(ks) => ks.is_encrypted(),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => false,
         }
     }
 
-    pub async fn add_imported_tk(&self, sk: String) -> String {
+    pub async fn add_imported_tk(
+        &self,
+        sk: String,
+    ) -> String {
         let sk = match WalletTKey::from_sk_string(&self.config, sk) {
             Err(e) => return format!("Error: {}", e),
             Ok(k) => k,
@@ -882,7 +987,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             return "Error: Can't import transparent address key while wallet is encrypted".to_string();
         }
 
-        if keys.tkeys.iter().find(|&tk| tk.address == address).is_some() {
+        if keys
+            .tkeys
+            .iter()
+            .find(|&tk| tk.address == address)
+            .is_some()
+        {
             return "Error: Key already exists".to_string();
         }
 
@@ -892,8 +1002,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     // Add a new imported spending key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_sk(&self, sk: String, birthday: u64) -> String {
-        //we don't need to acquire write access immediately
+    pub async fn add_imported_sk(
+        &self,
+        sk: String,
+        birthday: u64,
+    ) -> String {
+        // we don't need to acquire write access immediately
         // but in the general case we do want write access
         let mut keys = match self.in_memory_keys_mut().await {
             Ok(k) => k,
@@ -924,9 +1038,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         let extfvk = ExtendedFullViewingKey::from(&extsk);
         let zaddress = {
             let zkeys = &mut keys.zkeys;
-            let maybe_existing_zkey = zkeys.iter_mut().find(|wk| wk.extfvk == extfvk);
+            let maybe_existing_zkey = zkeys
+                .iter_mut()
+                .find(|wk| wk.extfvk == extfvk);
 
-            // If the viewing key exists, and is now being upgraded to the spending key, replace it in-place
+            // If the viewing key exists, and is now being upgraded to the spending key,
+            // replace it in-place
             if maybe_existing_zkey.is_some() {
                 let existing_zkey: &mut _ = maybe_existing_zkey.unwrap();
                 existing_zkey.extsk = Some(extsk);
@@ -947,8 +1064,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 
     // Add a new imported viewing key to the wallet
     /// NOTE: This will not rescan the wallet
-    pub async fn add_imported_vk(&self, vk: String, birthday: u64) -> String {
-        //we don't need to acquire write access immediately
+    pub async fn add_imported_vk(
+        &self,
+        vk: String,
+        birthday: u64,
+    ) -> String {
+        // we don't need to acquire write access immediately
         // but in the general case we do want write access
         let mut keys = match self.in_memory_keys_mut().await {
             Ok(k) => k,
@@ -967,7 +1088,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         };
 
         // Make sure the key doesn't already exist
-        if keys.zkeys.iter().find(|wk| wk.extfvk == extfvk.clone()).is_some() {
+        if keys
+            .zkeys
+            .iter()
+            .find(|wk| wk.extfvk == extfvk.clone())
+            .is_some()
+        {
             return "Error: Key already exists".to_string();
         }
 
@@ -980,10 +1106,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         encode_payment_address(self.config.hrp_sapling_address(), &newkey.zaddress)
     }
 
-    pub async fn unverified_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn unverified_zbalance(
+        &self,
+        addr: Option<String>,
+    ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        //TODO: allow any keystore (see usage)
+        // TODO: allow any keystore (see usage)
         let keys = self.keys().read().await;
 
         let txns = self.txns.read().await;
@@ -995,14 +1124,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 .notes
                 .iter()
                 .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                .filter(|nd| match addr.clone() {
-                    Some(a) => {
-                        a == encode_payment_address(
-                            self.config.hrp_sapling_address(),
-                            &nd.ivk.to_payment_address(nd.diversifier).unwrap(),
-                        )
+                .filter(|nd| {
+                    match addr.clone() {
+                        Some(a) => {
+                            a == encode_payment_address(
+                                self.config.hrp_sapling_address(),
+                                &nd.ivk
+                                    .to_payment_address(nd.diversifier)
+                                    .unwrap(),
+                            )
+                        },
+                        None => true,
                     }
-                    None => true,
                 })
             {
                 // Check to see if we have this note's spending key.
@@ -1018,10 +1151,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         sum
     }
 
-    pub async fn spendable_zbalance(&self, addr: Option<String>) -> u64 {
+    pub async fn spendable_zbalance(
+        &self,
+        addr: Option<String>,
+    ) -> u64 {
         let anchor_height = self.get_anchor_height().await;
 
-        //TODO: allow any keystore (see usage)
+        // TODO: allow any keystore (see usage)
         let keys = self.keys().read().await;
 
         let mut sum = 0;
@@ -1034,14 +1170,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                     .notes
                     .iter()
                     .filter(|nd| nd.spent.is_none() && nd.unconfirmed_spent.is_none())
-                    .filter(|nd| match addr.as_ref() {
-                        Some(a) => {
-                            *a == encode_payment_address(
-                                self.config.hrp_sapling_address(),
-                                &nd.ivk.to_payment_address(nd.diversifier).unwrap(),
-                            )
+                    .filter(|nd| {
+                        match addr.as_ref() {
+                            Some(a) => {
+                                *a == encode_payment_address(
+                                    self.config.hrp_sapling_address(),
+                                    &nd.ivk
+                                        .to_payment_address(nd.diversifier)
+                                        .unwrap(),
+                                )
+                            },
+                            None => true,
                         }
-                        None => true,
                     })
                 {
                     // Check to see if we have this note's spending key and witnesses
@@ -1056,8 +1196,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     pub async fn remove_unused_taddrs(&self) {
-        //TODO: allow any keystore (see usage)
-        let mut keys = self.in_memory_keys_mut().await.expect("in memory keystore");
+        // TODO: allow any keystore (see usage)
+        let mut keys = self
+            .in_memory_keys_mut()
+            .await
+            .expect("in memory keystore");
 
         let taddrs = keys.get_all_taddrs();
         if taddrs.len() <= 1 {
@@ -1091,8 +1234,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     }
 
     pub async fn remove_unused_zaddrs(&self) {
-        //TODO: allow any keystore (see usage)
-        let mut keys = self.in_memory_keys_mut().await.expect("in memory keystore");
+        // TODO: allow any keystore (see usage)
+        let mut keys = self
+            .in_memory_keys_mut()
+            .await
+            .expect("in memory keystore");
 
         let ivks = keys
             .get_all_extfvks()
@@ -1111,9 +1257,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .current
             .values()
             .flat_map(|wtx| {
-                wtx.notes
-                    .iter()
-                    .map(|n| ivks.iter().position(|ivk| ivk.0 == n.ivk.0).unwrap_or(ivks.len()))
+                wtx.notes.iter().map(|n| {
+                    ivks.iter()
+                        .position(|ivk| ivk.0 == n.ivk.0)
+                        .unwrap_or(ivks.len())
+                })
             })
             .max();
 
@@ -1127,14 +1275,24 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
     }
 
-    pub async fn decrypt_message(&self, enc: Vec<u8>) -> Option<Message> {
+    pub async fn decrypt_message(
+        &self,
+        enc: Vec<u8>,
+    ) -> Option<Message> {
         // Collect all the ivks in the wallet
-        let ivks = self.keys.read().await.get_all_ivks().await;
+        let ivks = self
+            .keys
+            .read()
+            .await
+            .get_all_ivks()
+            .await;
 
-        // Attempt decryption with all available ivks, one at a time. This is pretty fast, so need need for fancy multithreading
+        // Attempt decryption with all available ivks, one at a time. This is pretty
+        // fast, so need need for fancy multithreading
         for ivk in ivks {
             if let Ok(msg) = Message::decrypt(&enc, &ivk) {
-                // If decryption succeeded for this IVK, return the decrypted memo and the matched address
+                // If decryption succeeded for this IVK, return the decrypted memo and the
+                // matched address
                 return Some(msg);
             }
         }
@@ -1164,13 +1322,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
         {
             Ok((txid, rawtx, fees)) => {
-                self.set_send_success(txid.clone()).await;
+                self.set_send_success(txid.clone())
+                    .await;
                 Ok((txid, rawtx, fees))
-            }
+            },
             Err(e) => {
-                self.set_send_error(format!("{}", e)).await;
+                self.set_send_error(format!("{}", e))
+                    .await;
                 Err(e)
-            }
+            },
         }
     }
 
@@ -1196,11 +1356,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
 
         let total_value = tos.iter().map(|to| to.1).sum::<u64>();
-        println!(
-            "0: Creating transaction sending {} ztoshis to {} addresses",
-            total_value,
-            tos.len()
-        );
+        println!("0: Creating transaction sending {} ztoshis to {} addresses", total_value, tos.len());
 
         // Convert address (str) to RecepientAddress and value to Amount
         let recepients = tos
@@ -1212,7 +1368,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                         let e = format!("Invalid recipient address: '{}'", to.0);
                         error!("{}", e);
                         return Err(e);
-                    }
+                    },
                 };
 
                 let value = Amount::from_u64(to.1).unwrap();
@@ -1221,10 +1377,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             })
             .collect::<Result<Vec<(address::RecipientAddress, Amount, Option<String>)>, String>>()?;
 
-        let (touts_n, sapling_outputs_n) = recepients.iter().fold((0, 0), |(tout, sout), (addr, _, _)| match addr {
-            address::RecipientAddress::Shielded(_) => (tout, sout + 1),
-            address::RecipientAddress::Transparent(_) => (tout + 1, sout),
-        });
+        let (touts_n, sapling_outputs_n) = recepients
+            .iter()
+            .fold((0, 0), |(tout, sout), (addr, _, _)| {
+                match addr {
+                    address::RecipientAddress::Shielded(_) => (tout, sout + 1),
+                    address::RecipientAddress::Transparent(_) => (tout + 1, sout),
+                }
+            });
 
         // Select notes to cover the target value
         println!("{}: Selecting notes", now() - start_time);
@@ -1243,14 +1403,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 tokio::join!(guard.get_taddr_to_key_map(), guard.first_zkey())
             };
 
-            //create one if it doesn't exist already
+            // create one if it doesn't exist already
             let first = match first {
                 Some(first) => first,
                 None => {
                     let mut guard = self.keys.write().await;
                     guard.add_zaddr().await;
                     guard.first_zkey().await.unwrap()
-                }
+                },
             };
 
             (map, first)
@@ -1261,23 +1421,23 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await;
         if selected_value < (total_value + fees).unwrap() {
             let e = format!(
-                "Insufficient verified funds. Have {} zats, need {} zats + {} zats in fees. NOTE: funds need at least {} confirmations before they can be spent.",
+                "Insufficient verified funds. Have {} zats, need {} zats + {} zats in fees. NOTE: funds need at least \
+                 {} confirmations before they can be spent.",
                 u64::from(selected_value),
                 u64::from(total_value),
                 u64::from(fees),
-                self.config.anchor_offset.last().unwrap() + 1
+                self.config
+                    .anchor_offset
+                    .last()
+                    .unwrap()
+                    + 1
             );
             error!("{}", e);
             return Err(e);
         }
 
         // Create the transaction
-        println!(
-            "{}: Adding {} notes and {} utxos",
-            now() - start_time,
-            notes.len(),
-            utxos.len()
-        );
+        println!("{}: Adding {} notes and {} utxos", now() - start_time, notes.len(), utxos.len());
         let (progress_notifier, progress_notifier_rx) = mpsc::channel();
 
         let mut keys = self.keys.write().await;
@@ -1296,17 +1456,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 };
 
                 match address_to_key.get(&utxo.address) {
-                    Some(pk) => builder
-                        .add_transparent_input(*pk, outpoint.clone(), coin.clone())
-                        .map(|_| ())
-                        .map_err(|_| zcash_primitives::transaction::builder::Error::InvalidAmount),
+                    Some(pk) => {
+                        builder
+                            .add_transparent_input(*pk, outpoint.clone(), coin.clone())
+                            .map(|_| ())
+                            .map_err(|_| zcash_primitives::transaction::builder::Error::InvalidAmount)
+                    },
                     None => {
                         // Something is very wrong
                         let e = format!("Couldn't find the key for taddr {}", utxo.address);
                         error!("{}", e);
 
                         Err(zcash_primitives::transaction::builder::Error::InvalidAmount)
-                    }
+                    },
                 }
             })
             .collect::<Result<Vec<_>, _>>()
@@ -1326,8 +1488,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         }
 
         // If no Sapling notes were added, add the change address manually. That is,
-        // send the change to our sapling address manually. Note that if a sapling note was spent,
-        // the builder will automatically send change to that address
+        // send the change to our sapling address manually. Note that if a sapling note
+        // was spent, the builder will automatically send change to that address
         if notes.len() == 0 {
             builder.send_change_to(first_zkey_ovk, first_zkey_addr);
         }
@@ -1340,16 +1502,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             let encoded_memo = match memo {
                 None => MemoBytes::empty(),
                 Some(s) => {
-                    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
-                    // interpret it as a hex
+                    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+)
+                    // then interpret it as a hex
                     match utils::interpret_memo_string(s) {
                         Ok(m) => m,
                         Err(e) => {
                             error!("{}", e);
                             return Err(e);
-                        }
+                        },
                     }
-                }
+                },
             };
 
             println!("{}: Adding output", now() - start_time);
@@ -1358,7 +1520,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 address::RecipientAddress::Shielded(to) => {
                     total_z_recepients += 1;
                     builder.add_sapling_output(Some(ovk), to.clone(), value, encoded_memo)
-                }
+                },
                 address::RecipientAddress::Transparent(to) => builder.add_transparent_output(&to, value),
             } {
                 let e = format!("Error adding output: {:?}", e);
@@ -1367,7 +1529,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             }
         }
 
-        // Set up a channel to receieve updates on the progress of building the transaction
+        // Set up a channel to receieve updates on the progress of building the
+        // transaction
         let progress = self.send_progress.clone();
 
         // Use a separate thread to handle sending from std::mpsc to tokio::sync::mpsc
@@ -1384,7 +1547,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 progress.write().await.progress = r;
             }
 
-            progress.write().await.is_send_in_progress = false;
+            progress
+                .write()
+                .await
+                .is_send_in_progress = false;
         });
 
         {
@@ -1400,16 +1566,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
             .await
         {
             Ok(res) => {
-                //stop holding a WriteGuard to the keys
+                // stop holding a WriteGuard to the keys
                 std::mem::drop(keys);
                 res
-            }
+            },
             Err(e) => {
                 let e = format!("Error creating transaction: {:?}", e);
                 error!("{}", e);
-                self.send_progress.write().await.is_send_in_progress = false;
+                self.send_progress
+                    .write()
+                    .await
+                    .is_send_in_progress = false;
                 return Err(e);
-            }
+            },
         };
 
         // Wait for all the progress to be updated
@@ -1419,7 +1588,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         println!("Transaction ID: {}", tx.txid());
 
         {
-            self.send_progress.write().await.is_send_in_progress = false;
+            self.send_progress
+                .write()
+                .await
+                .is_send_in_progress = false;
         }
 
         // Create the TX bytes
@@ -1478,11 +1650,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
         Ok((txid, raw_tx, fees))
     }
 
-    pub async fn encrypt(&self, passwd: String) -> io::Result<()> {
+    pub async fn encrypt(
+        &self,
+        passwd: String,
+    ) -> io::Result<()> {
         match self.in_memory_keys_mut().await {
             Ok(mut ks) => ks.encrypt(passwd),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => Ok(()),
         }
     }
@@ -1490,26 +1665,32 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
     pub async fn lock(&self) -> io::Result<()> {
         match self.in_memory_keys_mut().await {
             Ok(mut ks) => ks.lock(),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => Ok(()),
         }
     }
 
-    pub async fn unlock(&self, passwd: String) -> io::Result<()> {
+    pub async fn unlock(
+        &self,
+        passwd: String,
+    ) -> io::Result<()> {
         match self.in_memory_keys_mut().await {
             Ok(mut ks) => ks.unlock(passwd),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => Ok(()),
         }
     }
 
-    pub async fn remove_encryption(&self, passwd: String) -> io::Result<()> {
+    pub async fn remove_encryption(
+        &self,
+        passwd: String,
+    ) -> io::Result<()> {
         match self.in_memory_keys_mut().await {
             Ok(mut ks) => ks.remove_encryption(passwd),
-            //for now if it's not in-memory just assume it's unlocked
-            //TODO: do appropriate work here for other keystores
+            // for now if it's not in-memory just assume it's unlocked
+            // TODO: do appropriate work here for other keystores
             _ => Ok(()),
         }
     }
@@ -1554,7 +1735,9 @@ mod test {
         let (data, config, ready_rx, stop_tx, h1) = create_test_server(UnitTestNetwork).await;
         ready_rx.await.unwrap();
 
-        let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
+        let mut lc = LightClient::test_new(&config, None, 0)
+            .await
+            .unwrap();
 
         let mut fcbl = FakeCompactBlockList::new(0);
 
@@ -1580,7 +1763,10 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1588,7 +1774,14 @@ mod test {
         assert_eq!(
             incw_to_string(&notes[0].witness),
             incw_to_string(
-                lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                lc.wallet
+                    .txns
+                    .read()
+                    .await
+                    .current
+                    .get(&tx.txid())
+                    .unwrap()
+                    .notes[0]
                     .witnesses
                     .last()
                     .unwrap()
@@ -1597,14 +1790,20 @@ mod test {
 
         // With min anchor_offset at 1, we can't select any notes
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, _selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // Mine 1 block, then it should be selectable
         mine_random_blocks(&mut fcbl, &data, &lc, 1).await;
 
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1612,17 +1811,28 @@ mod test {
         assert_eq!(
             incw_to_string(&notes[0].witness),
             incw_to_string(
-                lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                lc.wallet
+                    .txns
+                    .read()
+                    .await
+                    .current
+                    .get(&tx.txid())
+                    .unwrap()
+                    .notes[0]
                     .witnesses
                     .get_from_last(1)
                     .unwrap()
             )
         );
 
-        // Mine 15 blocks, then selecting the note should result in witness only 10 blocks deep
+        // Mine 15 blocks, then selecting the note should result in witness only 10
+        // blocks deep
         mine_random_blocks(&mut fcbl, &data, &lc, 15).await;
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 1];
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, true, 0, 0)
+            .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value);
@@ -1630,7 +1840,14 @@ mod test {
         assert_eq!(
             incw_to_string(&notes[0].witness),
             incw_to_string(
-                lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                lc.wallet
+                    .txns
+                    .read()
+                    .await
+                    .current
+                    .get(&tx.txid())
+                    .unwrap()
+                    .notes[0]
                     .witnesses
                     .get_from_last(9)
                     .unwrap()
@@ -1639,12 +1856,21 @@ mod test {
 
         // Trying to select a large amount will fail
         let amt = Amount::from_u64(1_000_000).unwrap();
-        let (notes, utxos, _selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, _selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 0);
 
         // 4. Get an incoming tx to a t address
-        let sk = lc.wallet.in_memory_keys().await.expect("in memory kesytore").tkeys[0].clone();
+        let sk = lc
+            .wallet
+            .in_memory_keys()
+            .await
+            .expect("in memory kesytore")
+            .tkeys[0]
+            .clone();
         let pk = sk.pubkey().unwrap();
         let taddr = sk.address;
         let tvalue = 100_000;
@@ -1656,14 +1882,20 @@ mod test {
 
         // Trying to select a large amount will now succeed
         let amt = Amount::from_u64(value + tvalue - lc.wallet.fee(1, 1, 0, 0, 0)).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, true, 0, 0)
+            .await;
         assert_eq!(selected, Amount::from_u64(value + tvalue).unwrap());
         assert_eq!(notes.len(), 1);
         assert_eq!(utxos.len(), 1);
 
         // If we set transparent-only = true, only the utxo should be selected
         let amt = Amount::from_u64(tvalue - lc.wallet.fee(1, 0, 0, 0, 0)).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, true, true, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, true, true, 0, 0)
+            .await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
@@ -1671,7 +1903,10 @@ mod test {
         // Set min confs to 5, so the sapling note will not be selected
         lc.wallet.config.anchor_offset = [9, 4, 4, 4, 4];
         let amt = Amount::from_u64(tvalue - lc.wallet.fee(1, 0, 0, 0, 0)).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, true, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, true, 0, 0)
+            .await;
         assert_eq!(selected, Amount::from_u64(tvalue).unwrap());
         assert_eq!(notes.len(), 0);
         assert_eq!(utxos.len(), 1);
@@ -1686,7 +1921,9 @@ mod test {
         let (data, config, ready_rx, stop_tx, h1) = create_test_server(UnitTestNetwork).await;
         ready_rx.await.unwrap();
 
-        let mut lc = LightClient::test_new(&config, None, 0).await.unwrap();
+        let mut lc = LightClient::test_new(&config, None, 0)
+            .await
+            .unwrap();
 
         let mut fcbl = FakeCompactBlockList::new(0);
 
@@ -1712,7 +1949,10 @@ mod test {
         let amt = Amount::from_u64(10_000).unwrap();
         // Reset the anchor offsets
         lc.wallet.config.anchor_offset = [9, 4, 2, 1, 0];
-        let (notes, utxos, selected, fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, selected, fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1720,7 +1960,14 @@ mod test {
         assert_eq!(
             incw_to_string(&notes[0].witness),
             incw_to_string(
-                lc.wallet.txns.read().await.current.get(&tx.txid()).unwrap().notes[0]
+                lc.wallet
+                    .txns
+                    .read()
+                    .await
+                    .current
+                    .get(&tx.txid())
+                    .unwrap()
+                    .notes[0]
                     .witnesses
                     .last()
                     .unwrap()
@@ -1737,7 +1984,10 @@ mod test {
 
         // Now, try to select a small amount, it should prefer the older note
         let amt = Amount::from_u64(10_000).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert!(selected >= amt);
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].note.value, value1);
@@ -1745,7 +1995,10 @@ mod test {
 
         // Selecting a bigger amount should select both notes
         let amt = Amount::from_u64(value1 + value2).unwrap();
-        let (notes, utxos, selected, _fees) = lc.wallet.select_notes_and_utxos(amt, false, false, 0, 0).await;
+        let (notes, utxos, selected, _fees) = lc
+            .wallet
+            .select_notes_and_utxos(amt, false, false, 0, 0)
+            .await;
         assert!(selected == amt);
         assert_eq!(notes.len(), 2);
         assert_eq!(utxos.len(), 0);

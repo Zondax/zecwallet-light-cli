@@ -1,11 +1,7 @@
-use crate::{
-    compact_formats::CompactBlock,
-    lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
-};
+use std::sync::Arc;
+
 use futures::{stream::FuturesUnordered, StreamExt};
 use log::info;
-
-use std::sync::Arc;
 use tokio::{
     sync::{
         mpsc::{channel, Sender, UnboundedSender},
@@ -13,7 +9,6 @@ use tokio::{
     },
     task::JoinHandle,
 };
-
 use zcash_primitives::{
     consensus::{self, BlockHeight},
     sapling::{note_encryption::try_sapling_compact_note_decryption, Nullifier, SaplingIvk},
@@ -21,6 +16,10 @@ use zcash_primitives::{
 };
 
 use super::syncdata::BlazeSyncData;
+use crate::{
+    compact_formats::CompactBlock,
+    lightwallet::{data::WalletTx, keys::Keystores, wallet_txns::WalletTxns, MemoDownloadOption},
+};
 
 pub struct TrialDecryptions<P> {
     keys: Arc<RwLock<Keystores<P>>>,
@@ -28,7 +27,10 @@ pub struct TrialDecryptions<P> {
 }
 
 impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
-    pub fn new(keys: Arc<RwLock<Keystores<P>>>, wallet_txns: Arc<RwLock<WalletTxns>>) -> Self {
+    pub fn new(
+        keys: Arc<RwLock<Keystores<P>>>,
+        wallet_txns: Arc<RwLock<WalletTxns>>,
+    ) -> Self {
         Self { keys, wallet_txns }
     }
 
@@ -38,7 +40,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         detected_txid_sender: Sender<(TxId, Option<Nullifier>, BlockHeight, Option<u32>)>,
         fulltx_fetcher: UnboundedSender<(TxId, oneshot::Sender<Result<Transaction, String>>)>,
     ) -> (JoinHandle<Result<(), String>>, Sender<CompactBlock>) {
-        //info!("Starting trial decrptions processor");
+        // info!("Starting trial decrptions processor");
 
         // Create a new channel where we'll receive the blocks. only 64 in the queue
         let (tx, mut rx) = channel::<CompactBlock>(64);
@@ -50,10 +52,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
             let mut workers = FuturesUnordered::new();
             let mut cbs = vec![];
 
-            let ivks = Arc::new(keys.read().await.get_all_ivks().await.collect::<Vec<_>>());
+            let ivks = Arc::new(
+                keys.read()
+                    .await
+                    .get_all_ivks()
+                    .await
+                    .collect::<Vec<_>>(),
+            );
 
             while let Some(cb) = rx.recv().await {
-                //println!("trial_witness recieved {:?}", cb.height);
+                // println!("trial_witness recieved {:?}", cb.height);
                 cbs.push(cb);
 
                 if cbs.len() >= 50 {
@@ -93,7 +101,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                 };
             }
 
-            //info!("Finished final trial decryptions");
+            // info!("Finished final trial decryptions");
             Ok(())
         });
 
@@ -114,7 +122,11 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         let blk_count = cbs.len();
         let mut workers = FuturesUnordered::new();
 
-        let download_memos = bsync_data.read().await.wallet_options.download_memos;
+        let download_memos = bsync_data
+            .read()
+            .await
+            .wallet_options
+            .download_memos;
 
         for cb in cbs {
             let height = BlockHeight::from_u32(cb.height as u32);
@@ -155,20 +167,25 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
                                     .await?;
 
                                 let txid = WalletTx::new_txid(&ctx.hash);
-                                let nullifier = keys.get_note_nullifier(&ivk, witness.position() as u64, &note).await?;
+                                let nullifier = keys
+                                    .get_note_nullifier(&ivk, witness.position() as u64, &note)
+                                    .await?;
 
-                                wallet_txns.write().await.add_new_sapling_note(
-                                    txid.clone(),
-                                    height,
-                                    false,
-                                    timestamp,
-                                    note,
-                                    to,
-                                    &ivk,
-                                    nullifier,
-                                    have_spending_key,
-                                    witness,
-                                );
+                                wallet_txns
+                                    .write()
+                                    .await
+                                    .add_new_sapling_note(
+                                        txid.clone(),
+                                        height,
+                                        false,
+                                        timestamp,
+                                        note,
+                                        to,
+                                        &ivk,
+                                        nullifier,
+                                        have_spending_key,
+                                        witness,
+                                    );
 
                                 info!("Trial decrypt Detected txid {}", &txid);
 
@@ -202,7 +219,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> TrialDecryptions<P> {
         }
 
         // Update sync status
-        bsync_data.read().await.sync_status.write().await.trial_dec_done += blk_count as u64;
+        bsync_data
+            .read()
+            .await
+            .sync_status
+            .write()
+            .await
+            .trial_dec_done += blk_count as u64;
 
         // Return a nothing-value
         // println!("Finished batch at {}", temp_start);

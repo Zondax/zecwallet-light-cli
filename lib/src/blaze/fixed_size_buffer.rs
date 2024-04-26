@@ -17,7 +17,10 @@ impl<T> FixedSizeBuffer<T> {
         Self { buf, pos: 0, capacity }
     }
 
-    pub fn push(&mut self, item: T) {
+    pub fn push(
+        &mut self,
+        item: T,
+    ) {
         if self.buf.len() == self.capacity {
             self.buf[self.pos] = item;
         } else {
@@ -44,37 +47,37 @@ mod test {
     #[test]
     fn test_basic() {
         let mut b = FixedSizeBuffer::new(5);
-        for i in 0..5 {
+        for i in 0 .. 5 {
             b.push(i);
         }
-        assert_eq!(b.into_vec(), (0..5).collect::<Vec<_>>());
+        assert_eq!(b.into_vec(), (0 .. 5).collect::<Vec<_>>());
     }
 
     #[test]
     fn test_extra_even() {
         let mut b = FixedSizeBuffer::new(5);
-        for i in 0..15 {
+        for i in 0 .. 15 {
             b.push(i);
         }
-        assert_eq!(b.into_vec(), (10..15).collect::<Vec<_>>());
+        assert_eq!(b.into_vec(), (10 .. 15).collect::<Vec<_>>());
     }
 
     #[test]
     fn test_extra_odd() {
         let mut b = FixedSizeBuffer::new(5);
-        for i in 0..13 {
+        for i in 0 .. 13 {
             b.push(i);
         }
-        assert_eq!(b.into_vec(), (8..13).collect::<Vec<_>>());
+        assert_eq!(b.into_vec(), (8 .. 13).collect::<Vec<_>>());
     }
 
     #[test]
     fn test_under() {
         let mut b = FixedSizeBuffer::new(5);
-        for i in 0..3 {
+        for i in 0 .. 3 {
             b.push(i);
         }
-        assert_eq!(b.into_vec(), (0..3).collect::<Vec<_>>());
+        assert_eq!(b.into_vec(), (0 .. 3).collect::<Vec<_>>());
     }
 
     #[test]

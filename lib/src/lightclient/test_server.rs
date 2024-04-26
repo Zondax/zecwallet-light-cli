@@ -1,20 +1,11 @@
-use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
-use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
-use crate::compact_formats::{
-    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
-    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
-    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
-};
-use crate::lightwallet::data::WalletTx;
-use crate::lightwallet::now;
-use futures::{FutureExt, Stream};
-use rand::rngs::OsRng;
-use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use futures::{FutureExt, Stream};
+use rand::rngs::OsRng;
+use rand::Rng;
 use tempdir::TempDir;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
@@ -27,13 +18,23 @@ use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
-use crate::lightclient::lightclient_config::UnitTestNetwork;
 
 use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;
+use crate::blaze::test_utils::{tree_to_string, FakeCompactBlockList};
+use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamer;
+use crate::compact_formats::compact_tx_streamer_server::CompactTxStreamerServer;
+use crate::compact_formats::{
+    Address, AddressList, Balance, BlockId, BlockRange, ChainSpec, CompactBlock, CompactTx, Duration, Empty, Exclude,
+    GetAddressUtxosArg, GetAddressUtxosReply, GetAddressUtxosReplyList, LightdInfo, PingResponse, PriceRequest,
+    PriceResponse, RawTransaction, SendResponse, TransparentAddressBlockFilter, TreeState, TxFilter,
+};
+use crate::lightclient::lightclient_config::UnitTestNetwork;
+use crate::lightwallet::data::WalletTx;
+use crate::lightwallet::now;
 
 pub async fn create_test_server<P: consensus::Parameters + Send + Sync + 'static>(
-    params: P,
+    params: P
 ) -> (
     Arc<RwLock<TestServerData<P>>>,
     LightClientConfig<P>,
@@ -98,9 +99,13 @@ pub async fn mine_random_blocks<P: consensus::Parameters + Send + Sync + 'static
     lc: &LightClient<P>,
     num: u64,
 ) {
-    let cbs = fcbl.add_blocks(num).into_compact_blocks();
+    let cbs = fcbl
+        .add_blocks(num)
+        .into_compact_blocks();
 
-    data.write().await.add_blocks(cbs.clone());
+    data.write()
+        .await
+        .add_blocks(cbs.clone());
     lc.do_sync(true).await.unwrap();
 }
 
@@ -112,7 +117,9 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
     let cbs = fcbl.into_compact_blocks();
     println!("mining pending block {}", cbs[0].vtx[0].outputs.len());
 
-    data.write().await.add_blocks(cbs.clone());
+    data.write()
+        .await
+        .add_blocks(cbs.clone());
     let mut v = fcbl.into_txns();
 
     // Add all the t-addr spend's t-addresses into the maps, so the test grpc server
@@ -121,8 +128,19 @@ pub async fn mine_pending_blocks<P: consensus::Parameters + Send + Sync + 'stati
         if let Some(t_bundle) = t.transparent_bundle() {
             for vin in &t_bundle.vin {
                 let prev_txid = WalletTx::new_txid(&vin.prevout.hash().to_vec());
-                if let Some(wtx) = lc.wallet.txns.read().await.current.get(&prev_txid) {
-                    if let Some(utxo) = wtx.utxos.iter().find(|u| u.output_index as u32 == vin.prevout.n()) {
+                if let Some(wtx) = lc
+                    .wallet
+                    .txns
+                    .read()
+                    .await
+                    .current
+                    .get(&prev_txid)
+                {
+                    if let Some(utxo) = wtx
+                        .utxos
+                        .iter()
+                        .find(|u| u.output_index as u32 == vin.prevout.n())
+                    {
                         if !taddrs.contains(&utxo.address) {
                             taddrs.push(utxo.address.clone());
                         }
@@ -161,18 +179,25 @@ impl<P: consensus::Parameters> TestServerData<P> {
         data
     }
 
-    pub fn add_txns(&mut self, txns: Vec<(Transaction, u64, Vec<String>)>) {
+    pub fn add_txns(
+        &mut self,
+        txns: Vec<(Transaction, u64, Vec<String>)>,
+    ) {
         for (tx, height, taddrs) in txns {
             let mut rtx = RawTransaction::default();
             let mut data = vec![];
             tx.write(&mut data).unwrap();
             rtx.data = data;
             rtx.height = height;
-            self.txns.insert(tx.txid(), (taddrs, rtx));
+            self.txns
+                .insert(tx.txid(), (taddrs, rtx));
         }
     }
 
-    pub fn add_blocks(&mut self, cbs: Vec<CompactBlock>) {
+    pub fn add_blocks(
+        &mut self,
+        cbs: Vec<CompactBlock>,
+    ) {
         if cbs.is_empty() {
             panic!("No blocks");
         }
@@ -217,31 +242,50 @@ impl<P: consensus::Parameters> TestGRPCService<P> {
     }
 
     async fn wait_random() {
-        let msecs = OsRng.gen_range(0..100);
+        let msecs = OsRng.gen_range(0 .. 100);
         sleep(std::time::Duration::from_millis(msecs)).await;
     }
 }
 
 #[tonic::async_trait]
 impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for TestGRPCService<P> {
-    async fn get_latest_block(&self, _request: Request<ChainSpec>) -> Result<Response<BlockId>, Status> {
+    async fn get_latest_block(
+        &self,
+        _request: Request<ChainSpec>,
+    ) -> Result<Response<BlockId>, Status> {
         Self::wait_random().await;
 
-        match self.data.read().await.blocks.iter().max_by_key(|b| b.height) {
-            Some(latest_block) => Ok(Response::new(BlockId {
-                height: latest_block.height,
-                hash: latest_block.hash.clone(),
-            })),
+        match self
+            .data
+            .read()
+            .await
+            .blocks
+            .iter()
+            .max_by_key(|b| b.height)
+        {
+            Some(latest_block) => {
+                Ok(Response::new(BlockId { height: latest_block.height, hash: latest_block.hash.clone() }))
+            },
             None => Err(Status::unavailable("No blocks")),
         }
     }
 
-    async fn get_block(&self, request: Request<BlockId>) -> Result<Response<CompactBlock>, Status> {
+    async fn get_block(
+        &self,
+        request: Request<BlockId>,
+    ) -> Result<Response<CompactBlock>, Status> {
         Self::wait_random().await;
 
         let height = request.into_inner().height;
 
-        match self.data.read().await.blocks.iter().find(|b| b.height == height) {
+        match self
+            .data
+            .read()
+            .await
+            .blocks
+            .iter()
+            .find(|b| b.height == height)
+        {
             Some(b) => Ok(Response::new(b.clone())),
             None => Err(Status::unavailable(format!("Block {} not found", height))),
         }
@@ -263,7 +307,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         let blocks = self.data.read().await.blocks.clone();
         tokio::spawn(async move {
             let (iter, min, max) = if rev {
-                (blocks.iter().rev().map(|b| b.clone()).collect(), start, end)
+                (
+                    blocks
+                        .iter()
+                        .rev()
+                        .map(|b| b.clone())
+                        .collect(),
+                    start,
+                    end,
+                )
             } else {
                 (blocks, end, start)
             };
@@ -278,11 +330,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         Ok(Response::new(Box::pin(ReceiverStream::new(rx))))
     }
 
-    async fn get_zec_price(&self, _request: Request<PriceRequest>) -> Result<Response<PriceResponse>, Status> {
-        self.get_current_zec_price(Request::new(Empty {})).await
+    async fn get_zec_price(
+        &self,
+        _request: Request<PriceRequest>,
+    ) -> Result<Response<PriceResponse>, Status> {
+        self.get_current_zec_price(Request::new(Empty {}))
+            .await
     }
 
-    async fn get_current_zec_price(&self, _request: Request<Empty>) -> Result<Response<PriceResponse>, Status> {
+    async fn get_current_zec_price(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<PriceResponse>, Status> {
         Self::wait_random().await;
 
         let mut res = PriceResponse::default();
@@ -293,7 +352,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         Ok(Response::new(res))
     }
 
-    async fn get_transaction(&self, request: Request<TxFilter>) -> Result<Response<RawTransaction>, Status> {
+    async fn get_transaction(
+        &self,
+        request: Request<TxFilter>,
+    ) -> Result<Response<RawTransaction>, Status> {
         Self::wait_random().await;
 
         let txid = WalletTx::new_txid(&request.into_inner().hash);
@@ -303,20 +365,24 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         }
     }
 
-    async fn send_transaction(&self, request: Request<RawTransaction>) -> Result<Response<SendResponse>, Status> {
+    async fn send_transaction(
+        &self,
+        request: Request<RawTransaction>,
+    ) -> Result<Response<SendResponse>, Status> {
         let rtx = request.into_inner();
         let txid = Transaction::read(
             &rtx.data[..],
             BranchId::for_height(&UnitTestNetwork, BlockHeight::from_u32(rtx.height as u32)),
         )
-            .unwrap()
-            .txid();
+        .unwrap()
+        .txid();
 
-        self.data.write().await.sent_txns.push(rtx);
-        Ok(Response::new(SendResponse {
-            error_message: txid.to_string(),
-            error_code: 0,
-        }))
+        self.data
+            .write()
+            .await
+            .sent_txns
+            .push(rtx);
+        Ok(Response::new(SendResponse { error_message: txid.to_string(), error_code: 0 }))
     }
 
     type GetTaddressTxidsStream = Pin<Box<dyn Stream<Item = Result<RawTransaction, Status>> + Send + Sync>>;
@@ -330,8 +396,22 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
 
         let request = request.into_inner();
         let taddr = request.address;
-        let start_block = request.range.as_ref().unwrap().start.as_ref().unwrap().height;
-        let end_block = request.range.as_ref().unwrap().end.as_ref().unwrap().height;
+        let start_block = request
+            .range
+            .as_ref()
+            .unwrap()
+            .start
+            .as_ref()
+            .unwrap()
+            .height;
+        let end_block = request
+            .range
+            .as_ref()
+            .unwrap()
+            .end
+            .as_ref()
+            .unwrap()
+            .height;
 
         let txns = self.data.read().await.txns.clone();
         tokio::spawn(async move {
@@ -367,7 +447,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         self.get_taddress_txids(request).await
     }
 
-    async fn get_taddress_balance(&self, _request: Request<AddressList>) -> Result<Response<Balance>, Status> {
+    async fn get_taddress_balance(
+        &self,
+        _request: Request<AddressList>,
+    ) -> Result<Response<Balance>, Status> {
         todo!()
     }
 
@@ -380,11 +463,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
 
     type GetMempoolTxStream = Pin<Box<dyn Stream<Item = Result<CompactTx, Status>> + Send + Sync>>;
 
-    async fn get_mempool_tx(&self, _request: Request<Exclude>) -> Result<Response<Self::GetMempoolTxStream>, Status> {
+    async fn get_mempool_tx(
+        &self,
+        _request: Request<Exclude>,
+    ) -> Result<Response<Self::GetMempoolTxStream>, Status> {
         todo!()
     }
 
-    async fn get_tree_state(&self, request: Request<BlockId>) -> Result<Response<TreeState>, Status> {
+    async fn get_tree_state(
+        &self,
+        request: Request<BlockId>,
+    ) -> Result<Response<TreeState>, Status> {
         Self::wait_random().await;
 
         let block = request.into_inner();
@@ -407,7 +496,14 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
             return Ok(Response::new(ts));
         }
 
-        let start_block = self.data.read().await.blocks.last().map(|b| b.height - 1).unwrap_or(0);
+        let start_block = self
+            .data
+            .read()
+            .await
+            .blocks
+            .last()
+            .map(|b| b.height - 1)
+            .unwrap_or(0);
 
         let start_tree = self
             .data
@@ -430,7 +526,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
             .fold(start_tree, |mut tree, cb| {
                 for tx in &cb.vtx {
                     for co in &tx.outputs {
-                        tree.append(Node::new(co.cmu().unwrap().into())).unwrap();
+                        tree.append(Node::new(co.cmu().unwrap().into()))
+                            .unwrap();
                     }
                 }
 
@@ -472,7 +569,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
         todo!()
     }
 
-    async fn get_lightd_info(&self, _request: Request<Empty>) -> Result<Response<LightdInfo>, Status> {
+    async fn get_lightd_info(
+        &self,
+        _request: Request<Empty>,
+    ) -> Result<Response<LightdInfo>, Status> {
         Self::wait_random().await;
 
         let mut ld = LightdInfo::default();
@@ -487,13 +587,27 @@ impl<P: consensus::Parameters + Send + Sync + 'static> CompactTxStreamer for Tes
             .max()
             .unwrap_or(0);
         ld.taddr_support = true;
-        ld.chain_name = self.data.read().await.config.chain_name.clone();
-        ld.sapling_activation_height = self.data.read().await.config.sapling_activation_height;
+        ld.chain_name = self
+            .data
+            .read()
+            .await
+            .config
+            .chain_name
+            .clone();
+        ld.sapling_activation_height = self
+            .data
+            .read()
+            .await
+            .config
+            .sapling_activation_height;
 
         Ok(Response::new(ld))
     }
 
-    async fn ping(&self, _request: Request<Duration>) -> Result<Response<PingResponse>, Status> {
+    async fn ping(
+        &self,
+        _request: Request<Duration>,
+    ) -> Result<Response<PingResponse>, Status> {
         todo!()
     }
 

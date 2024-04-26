@@ -27,11 +27,7 @@ pub const WALLET_NAME: &str = "zecwallet-light-wallet.dat";
 pub const LOGFILE_NAME: &str = "zecwallet-light-wallet.debug.log";
 pub const ANCHOR_OFFSET: [u32; 5] = [4, 0, 0, 0, 0];
 pub const MAX_REORG: usize = 100;
-pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) {
-    0
-} else {
-    5
-};
+pub const GAP_RULE_UNUSED_ADDRESSES: usize = if cfg!(any(target_os = "ios", target_os = "android")) { 0 } else { 5 };
 
 #[derive(Debug, Clone)]
 pub enum Network {
@@ -40,7 +36,10 @@ pub enum Network {
 }
 
 impl consensus::Parameters for Network {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+    fn activation_height(
+        &self,
+        nu: NetworkUpgrade,
+    ) -> Option<BlockHeight> {
         match self {
             Network::Main(net) => net.activation_height(nu),
             Network::Test(net) => net.activation_height(nu),
@@ -95,7 +94,10 @@ impl consensus::Parameters for Network {
 pub struct UnitTestNetwork;
 
 impl Parameters for UnitTestNetwork {
-    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+    fn activation_height(
+        &self,
+        nu: NetworkUpgrade,
+    ) -> Option<BlockHeight> {
         match nu {
             NetworkUpgrade::Overwinter => Some(BlockHeight::from(1)),
             NetworkUpgrade::Sapling => Some(BlockHeight::from(1)),
@@ -148,10 +150,15 @@ pub struct LightClientConfig<P> {
 
 impl<P: consensus::Parameters> LightClientConfig<P> {
     // Create an unconnected (to any server) config to test for local wallet etc...
-    pub fn create_unconnected(params: P, dir: Option<String>) -> LightClientConfig<P> {
+    pub fn create_unconnected(
+        params: P,
+        dir: Option<String>,
+    ) -> LightClientConfig<P> {
         LightClientConfig {
             server: http::Uri::default(),
-            chain_name: params.hrp_sapling_payment_address().to_string(),
+            chain_name: params
+                .hrp_sapling_payment_address()
+                .to_string(),
             sapling_activation_height: 1,
             monitor_mempool: false,
             anchor_offset: [4; 5],
@@ -160,28 +167,30 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         }
     }
 
-    pub fn create(server: http::Uri, data_dir: Option<String>) -> io::Result<(LightClientConfig<Network>, u64)> {
+    pub fn create(
+        server: http::Uri,
+        data_dir: Option<String>,
+    ) -> io::Result<(LightClientConfig<Network>, u64)> {
         use std::net::ToSocketAddrs;
 
         let s = server.clone();
         if let Ok((chain_name, sapling_activation_height, block_height)) =
-            Runtime::new().unwrap().block_on(async move {
-                // Test for a connection first
-                format!("{}:{}", server.host().unwrap(), server.port().unwrap())
-                    .to_socket_addrs()?
-                    .next()
-                    .ok_or(std::io::Error::new(
-                        ErrorKind::ConnectionRefused,
-                        "Couldn't resolve server!",
-                    ))?;
+            Runtime::new()
+                .unwrap()
+                .block_on(async move {
+                    // Test for a connection first
+                    format!("{}:{}", server.host().unwrap(), server.port().unwrap())
+                        .to_socket_addrs()?
+                        .next()
+                        .ok_or(std::io::Error::new(ErrorKind::ConnectionRefused, "Couldn't resolve server!"))?;
 
-                // Do a getinfo first, before opening the wallet
-                let info = GrpcConnector::get_info(server.clone())
-                    .await
-                    .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
+                    // Do a getinfo first, before opening the wallet
+                    let info = GrpcConnector::get_info(server.clone())
+                        .await
+                        .map_err(|e| std::io::Error::new(ErrorKind::ConnectionRefused, e))?;
 
-                Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
-            })
+                    Ok::<_, std::io::Error>((info.chain_name, info.sapling_activation_height, info.block_height))
+                })
         {
             let params = match &chain_name[..] {
                 "zs" | "main" => Network::Main(MainNetwork),
@@ -209,7 +218,10 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         }
     }
 
-    pub fn set_data_dir(&mut self, dir_str: String) {
+    pub fn set_data_dir(
+        &mut self,
+        dir_str: String,
+    ) {
         self.data_dir = Some(dir_str);
     }
 
@@ -240,7 +252,11 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                         ),
                     ),
             )
-            .build(Root::builder().appender("logfile").build(LevelFilter::Debug))
+            .build(
+                Root::builder()
+                    .appender("logfile")
+                    .build(LevelFilter::Debug),
+            )
             .map_err(|e| Error::new(ErrorKind::Other, format!("{}", e)))
     }
 
@@ -265,7 +281,7 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 };
 
                 match &self.chain_name[..] {
-                    "zs" | "main" => {}
+                    "zs" | "main" => {},
                     "ztestsapling" | "test" => zcash_data_location.push("testnet3"),
                     "zregtestsapling" | "regtest" => zcash_data_location.push("regtest"),
                     c => panic!("Unknown chain {}", c),
@@ -274,11 +290,11 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
 
             // Create directory if it doesn't exist on non-mobile platforms
             match std::fs::create_dir_all(zcash_data_location.clone()) {
-                Ok(_) => {}
+                Ok(_) => {},
                 Err(e) => {
                     eprintln!("Couldn't create zcash directory!\n{}", e);
                     panic!("Couldn't create zcash directory!");
-                }
+                },
             };
 
             zcash_data_location.into_boxed_path()
@@ -290,13 +306,12 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
             Ok(PathBuf::from(&self.data_dir.as_ref().unwrap()).into_boxed_path())
         } else {
             if dirs::home_dir().is_none() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Couldn't determine Home Dir",
-                ));
+                return Err(io::Error::new(io::ErrorKind::InvalidData, "Couldn't determine Home Dir"));
             }
 
-            let mut zcash_params = self.get_zcash_data_path().into_path_buf();
+            let mut zcash_params = self
+                .get_zcash_data_path()
+                .into_path_buf();
             zcash_params.push("..");
             if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
                 zcash_params.push("ZcashParams");
@@ -309,13 +324,15 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 Err(e) => {
                     eprintln!("Couldn't create zcash params directory\n{}", e);
                     Err(e)
-                }
+                },
             }
         }
     }
 
     pub fn get_wallet_path(&self) -> Box<Path> {
-        let mut wallet_location = self.get_zcash_data_path().into_path_buf();
+        let mut wallet_location = self
+            .get_zcash_data_path()
+            .into_path_buf();
         wallet_location.push(WALLET_NAME);
 
         wallet_location.into_boxed_path()
@@ -334,27 +351,39 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
         }
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut backup_file_path = self.get_zcash_data_path().into_path_buf();
+        let mut backup_file_path = self
+            .get_zcash_data_path()
+            .into_path_buf();
         backup_file_path.push(&format!(
             "zecwallet-light-wallet.backup.{}.dat",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
         ));
 
-        let backup_file_str = backup_file_path.to_string_lossy().to_string();
+        let backup_file_str = backup_file_path
+            .to_string_lossy()
+            .to_string();
         std::fs::copy(self.get_wallet_path(), backup_file_path).map_err(|e| format!("{}", e))?;
 
         Ok(backup_file_str)
     }
 
     pub fn get_log_path(&self) -> Box<Path> {
-        let mut log_path = self.get_zcash_data_path().into_path_buf();
+        let mut log_path = self
+            .get_zcash_data_path()
+            .into_path_buf();
         log_path.push(LOGFILE_NAME);
-        //println!("LogFile:\n{}", log_path.to_str().unwrap());
+        // println!("LogFile:\n{}", log_path.to_str().unwrap());
 
         log_path.into_boxed_path()
     }
 
-    pub async fn get_initial_state(&self, height: u64) -> Option<(u64, String, String)> {
+    pub async fn get_initial_state(
+        &self,
+        height: u64,
+    ) -> Option<(u64, String, String)> {
         if height <= self.sapling_activation_height {
             return None;
         }
@@ -365,31 +394,27 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
                 let hash = tree_state.hash.clone();
                 let tree = tree_state.tree.clone();
                 Some((tree_state.height, hash, tree))
-            }
+            },
             Err(e) => {
                 error!("Error getting sapling tree:{}\nWill return checkpoint instead.", e);
                 match checkpoints::get_closest_checkpoint(&self.chain_name, height) {
                     Some((height, hash, tree)) => Some((height, hash.to_string(), tree.to_string())),
                     None => None,
                 }
-            }
+            },
         }
     }
 
     pub fn get_server_or_default(server: Option<String>) -> http::Uri {
         match server {
             Some(s) => {
-                let mut s = if s.starts_with("http") {
-                    s
-                } else {
-                    "http://".to_string() + &s
-                };
+                let mut s = if s.starts_with("http") { s } else { "http://".to_string() + &s };
                 let uri: http::Uri = s.parse().unwrap();
                 if uri.port().is_none() {
                     s = s + ":443";
                 }
                 s
-            }
+            },
             None => DEFAULT_SERVER.to_string(),
         }
         .parse()
@@ -401,15 +426,18 @@ impl<P: consensus::Parameters> LightClientConfig<P> {
     }
 
     pub fn hrp_sapling_address(&self) -> &str {
-        self.params.hrp_sapling_payment_address()
+        self.params
+            .hrp_sapling_payment_address()
     }
 
     pub fn hrp_sapling_private_key(&self) -> &str {
-        self.params.hrp_sapling_extended_spending_key()
+        self.params
+            .hrp_sapling_extended_spending_key()
     }
 
     pub fn hrp_sapling_viewing_key(&self) -> &str {
-        self.params.hrp_sapling_extended_full_viewing_key()
+        self.params
+            .hrp_sapling_extended_full_viewing_key()
     }
 
     pub fn base58_pubkey_address(&self) -> [u8; 2] {

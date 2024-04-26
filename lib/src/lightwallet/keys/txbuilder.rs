@@ -1,5 +1,7 @@
-use secp256k1::PublicKey as SecpPublicKey;
 use std::sync::mpsc;
+
+use secp256k1::PublicKey as SecpPublicKey;
+use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
     consensus::BranchId,
     keys::OutgoingViewingKey,
@@ -12,7 +14,6 @@ use zcash_primitives::{
         Transaction,
     },
 };
-use zcash_primitives::transaction::builder::Progress;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
@@ -38,10 +39,11 @@ cfg_if::cfg_if! {
     }
 }
 
-/// This trait represents the functionality that a ZCash transaction builder should expose
+/// This trait represents the functionality that a ZCash transaction builder
+/// should expose
 ///
-/// Will be used as common interface between [`zcash_primitives::transaction::builder::Builder`]
-/// and other builders
+/// Will be used as common interface between
+/// [`zcash_primitives::transaction::builder::Builder`] and other builders
 #[async_trait::async_trait]
 pub trait Builder {
     type Error;
@@ -69,26 +71,39 @@ pub trait Builder {
         coin: TxOut,
     ) -> Result<&mut Self, Self::Error>;
 
-    fn add_transparent_output(&mut self, to: &TransparentAddress, value: Amount) -> Result<&mut Self, Self::Error>;
+    fn add_transparent_output(
+        &mut self,
+        to: &TransparentAddress,
+        value: Amount,
+    ) -> Result<&mut Self, Self::Error>;
 
-    fn send_change_to(&mut self, ovk: OutgoingViewingKey, to: PaymentAddress) -> &mut Self;
+    fn send_change_to(
+        &mut self,
+        ovk: OutgoingViewingKey,
+        to: PaymentAddress,
+    ) -> &mut Self;
 
-    /// Sets the notifier channel, where progress of building the transaction is sent.
+    /// Sets the notifier channel, where progress of building the transaction is
+    /// sent.
     ///
-    /// An update is sent after every Spend or Output is computed, and the `u32` sent
-    /// represents the total steps completed so far. It will eventually send number of
-    /// spends + outputs. If there's an error building the transaction, the channel is
-    /// closed.
-    fn with_progress_notifier(&mut self, progress_notifier: Option<mpsc::Sender<Progress>>);
+    /// An update is sent after every Spend or Output is computed, and the `u32`
+    /// sent represents the total steps completed so far. It will eventually
+    /// send number of spends + outputs. If there's an error building the
+    /// transaction, the channel is closed.
+    fn with_progress_notifier(
+        &mut self,
+        progress_notifier: Option<mpsc::Sender<Progress>>,
+    );
 
-    /// This will take care of building the transaction with the inputs given so far
+    /// This will take care of building the transaction with the inputs given so
+    /// far
     ///
-    /// The `progress` is an optional argument for a mpsc channel to allow the builder
-    /// to send the number of items processed so far
+    /// The `progress` is an optional argument for a mpsc channel to allow the
+    /// builder to send the number of items processed so far
     async fn build(
         mut self,
         consensus: BranchId,
         prover: &(impl TxProver + Send + Sync),
         fee: u64,
-    ) -> Result<(Transaction, SaplingMetadata), Self::Error> ;
+    ) -> Result<(Transaction, SaplingMetadata), Self::Error>;
 }

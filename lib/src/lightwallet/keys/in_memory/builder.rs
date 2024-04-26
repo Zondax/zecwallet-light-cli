@@ -1,6 +1,7 @@
+use std::sync::mpsc;
+
 use rand::rngs::OsRng;
 use secp256k1::PublicKey as SecpPublicKey;
-use std::sync::mpsc;
 use zcash_primitives::consensus::BranchId;
 use zcash_primitives::transaction::builder::Progress;
 use zcash_primitives::{
@@ -42,11 +43,12 @@ pub struct InMemoryBuilder<'a, P: Parameters> {
 }
 
 impl<'a, P: Parameters> InMemoryBuilder<'a, P> {
-    pub fn new(params: P, target_height: BlockHeight, keystore: &'a mut InMemoryKeys<P>) -> Self {
-        Self {
-            inner: ZBuilder::new(params, target_height),
-            keystore,
-        }
+    pub fn new(
+        params: P,
+        target_height: BlockHeight,
+        keystore: &'a mut InMemoryKeys<P>,
+    ) -> Self {
+        Self { inner: ZBuilder::new(params, target_height), keystore }
     }
 }
 
@@ -71,7 +73,8 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
             .flatten()
             .ok_or(BuilderError::NoAssociatedSpendingKey)?;
 
-        self.inner.add_sapling_spend(key, diversifier, note, merkle_path)?;
+        self.inner
+            .add_sapling_spend(key, diversifier, note, merkle_path)?;
 
         Ok(self)
     }
@@ -83,7 +86,8 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
         value: Amount,
         memo: MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
-        self.inner.add_sapling_output(ovk, to, value, memo)?;
+        self.inner
+            .add_sapling_output(ovk, to, value, memo)?;
         Ok(self)
     }
 
@@ -95,31 +99,53 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
     ) -> Result<&mut Self, Self::Error> {
         let map = self.keystore.get_taddr_to_sk_map();
         let key = {
-            let addr = compute_taddr(&key, &self.keystore.config.base58_pubkey_address(), &[]);
+            let addr = compute_taddr(
+                &key,
+                &self
+                    .keystore
+                    .config
+                    .base58_pubkey_address(),
+                &[],
+            );
 
-            //then do the lookup in the map
-            map.get(&addr).cloned().ok_or(BuilderError::NoAssociatedPrivateKey)?
+            // then do the lookup in the map
+            map.get(&addr)
+                .cloned()
+                .ok_or(BuilderError::NoAssociatedPrivateKey)?
         };
 
-        self.inner.add_transparent_input(key, utxo, coin)?;
+        self.inner
+            .add_transparent_input(key, utxo, coin)?;
 
         Ok(self)
     }
 
-    fn add_transparent_output(&mut self, to: &TransparentAddress, value: Amount) -> Result<&mut Self, Self::Error> {
-        self.inner.add_transparent_output(to, value)?;
+    fn add_transparent_output(
+        &mut self,
+        to: &TransparentAddress,
+        value: Amount,
+    ) -> Result<&mut Self, Self::Error> {
+        self.inner
+            .add_transparent_output(to, value)?;
         Ok(self)
     }
 
-    fn send_change_to(&mut self, ovk: OutgoingViewingKey, to: PaymentAddress) -> &mut Self {
+    fn send_change_to(
+        &mut self,
+        ovk: OutgoingViewingKey,
+        to: PaymentAddress,
+    ) -> &mut Self {
         self.inner.send_change_to(ovk, to);
 
         self
     }
 
-    fn with_progress_notifier(&mut self, progress_notifier: Option<mpsc::Sender<Progress>>) {
+    fn with_progress_notifier(
+        &mut self,
+        progress_notifier: Option<mpsc::Sender<Progress>>,
+    ) {
         let progress_notifier = if let Some(progress_notifier) = progress_notifier {
-            //wrap given channel with the one expected by the builder
+            // wrap given channel with the one expected by the builder
             let (tx, rx) = mpsc::channel();
             tokio::task::spawn_blocking(move || {
                 while let Ok(num) = rx.recv() {
@@ -132,14 +158,15 @@ impl<'a, P: Parameters + Send + Sync + 'static> Builder for InMemoryBuilder<'a, 
         } else {
             None
         };
-        self.inner.with_progress_notifier(progress_notifier.unwrap());
+        self.inner
+            .with_progress_notifier(progress_notifier.unwrap());
     }
 
     async fn build(
         mut self,
         _: BranchId,
         prover: &(impl TxProver + Send + Sync),
-        _: u64, //TODO: pass fee to builder
+        _: u64, // TODO: pass fee to builder
     ) -> Result<(Transaction, SaplingMetadata), Self::Error> {
         self.inner
             .build(prover)

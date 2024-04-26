@@ -21,7 +21,10 @@ pub struct SyncStatus {
 }
 
 impl SyncStatus {
-    pub fn start_new(&mut self, batch_total: usize) {
+    pub fn start_new(
+        &mut self,
+        batch_total: usize,
+    ) {
         self.sync_id += 1;
         self.last_error = None;
         self.in_progress = true;
@@ -34,7 +37,12 @@ impl SyncStatus {
     }
 
     /// Setup a new sync status in prep for an upcoming sync
-    pub fn new_sync_batch(&mut self, start_block: u64, end_block: u64, batch_num: usize) {
+    pub fn new_sync_batch(
+        &mut self,
+        start_block: u64,
+        end_block: u64,
+        batch_num: usize,
+    ) {
         self.in_progress = true;
         self.last_error = None;
 
@@ -53,7 +61,10 @@ impl SyncStatus {
     }
 
     #[allow(dead_code)]
-    fn perct(&self, num: u64) -> u8 {
+    fn perct(
+        &self,
+        num: u64,
+    ) -> u8 {
         let a = if self.blocks_total > 0 {
             let (b, d) = if self.batch_total > 0 {
                 ((self.batch_num * 100 / self.batch_total), self.batch_total)
@@ -71,7 +82,10 @@ impl SyncStatus {
 }
 
 impl fmt::Display for SyncStatus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         if self.blocks_total > 0 && self.in_progress {
             write!(
                 f,
@@ -90,7 +104,9 @@ impl fmt::Display for SyncStatus {
                 "id: {}, in_progress: {}, errors: {}",
                 self.sync_id,
                 self.in_progress,
-                self.last_error.as_ref().unwrap_or(&"None".to_string())
+                self.last_error
+                    .as_ref()
+                    .unwrap_or(&"None".to_string())
             )
         }
     }

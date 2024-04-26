@@ -1,6 +1,5 @@
-use crate::compact_formats::RawTransaction;
-use crate::lightwallet::keys::Keystores;
 use std::sync::Arc;
+
 use tokio::{
     join,
     sync::{
@@ -13,6 +12,9 @@ use zcash_primitives::{
     consensus::{self, BlockHeight, BranchId},
     transaction::Transaction,
 };
+
+use crate::compact_formats::RawTransaction;
+use crate::lightwallet::keys::Keystores;
 
 pub struct FetchTaddrTxns<P> {
     keys: Arc<RwLock<Keystores<P>>>,
@@ -37,18 +39,27 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
         let keys = self.keys.clone();
 
         tokio::spawn(async move {
-            let taddrs = keys.read().await.get_all_taddrs().await.collect::<Vec<_>>();
+            let taddrs = keys
+                .read()
+                .await
+                .get_all_taddrs()
+                .await
+                .collect::<Vec<_>>();
 
-            // Fetch all transactions for all t-addresses in parallel, and process them in height order
+            // Fetch all transactions for all t-addresses in parallel, and process them in
+            // height order
             let req = (taddrs, start_height, end_height);
             let (res_tx, res_rx) = oneshot::channel::<Vec<UnboundedReceiver<Result<RawTransaction, String>>>>();
-            taddr_fetcher.send((req, res_tx)).unwrap();
+            taddr_fetcher
+                .send((req, res_tx))
+                .unwrap();
 
             let (ordered_rtx_tx, mut ordered_rtx_rx) = unbounded_channel();
 
             // Process every transparent address transaction, in order of height
             let h1: JoinHandle<Result<(), String>> = tokio::spawn(async move {
-                // Now, read the transactions one-at-a-time, and then dispatch them in height order
+                // Now, read the transactions one-at-a-time, and then dispatch them in height
+                // order
                 let mut txns_top = vec![];
 
                 // Fill the array with the first transaction for every taddress
@@ -96,7 +107,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
                     }
                 }
 
-                //info!("Finished fetching all t-addr txns");
+                // info!("Finished fetching all t-addr txns");
 
                 Ok(())
             });
@@ -124,7 +135,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
                         .unwrap();
                 }
 
-                //info!("Finished scanning all t-addr txns");
+                // info!("Finished scanning all t-addr txns");
                 Ok(())
             });
 
@@ -139,32 +150,37 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
 
 #[cfg(test)]
 mod test {
+    use std::sync::Arc;
+
     use futures::future::try_join_all;
     use rand::Rng;
-    use std::sync::Arc;
     use tokio::join;
     use tokio::sync::mpsc::UnboundedReceiver;
-
-    use crate::compact_formats::RawTransaction;
-    use crate::lightclient::faketx;
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use tokio::sync::oneshot;
     use tokio::sync::RwLock;
     use tokio::{sync::mpsc::unbounded_channel, task::JoinHandle};
     use zcash_primitives::consensus::BlockHeight;
     use zcash_primitives::transaction::Transaction;
 
+    use super::FetchTaddrTxns;
+    use crate::compact_formats::RawTransaction;
+    use crate::lightclient::faketx;
+    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::lightwallet::keys::InMemoryKeys;
     use crate::lightwallet::wallettkey::WalletTKey;
-
-    use super::FetchTaddrTxns;
 
     #[tokio::test]
     async fn out_of_order_txns() {
         // 5 t addresses
         let mut keys = InMemoryKeys::<UnitTestNetwork>::new_empty(UnitTestNetwork);
-        let gened_taddrs: Vec<_> = (0..5).into_iter().map(|n| format!("taddr{}", n)).collect();
-        keys.tkeys = gened_taddrs.iter().map(|ta| WalletTKey::empty(ta)).collect::<Vec<_>>();
+        let gened_taddrs: Vec<_> = (0 .. 5)
+            .into_iter()
+            .map(|n| format!("taddr{}", n))
+            .collect();
+        keys.tkeys = gened_taddrs
+            .iter()
+            .map(|ta| WalletTKey::empty(ta))
+            .collect::<Vec<_>>();
 
         let ftt = FetchTaddrTxns::new(Arc::new(RwLock::new(keys.into())));
 
@@ -189,17 +205,21 @@ mod test {
                     let mut rng = rand::thread_rng();
 
                     // Generate between 50 and 200 txns per taddr
-                    let num_txns = rng.gen_range(50..200);
+                    let num_txns = rng.gen_range(50 .. 200);
 
-                    let mut rtxs = (0..num_txns)
+                    let mut rtxs = (0 .. num_txns)
                         .into_iter()
-                        .map(|_| rng.gen_range(1..100))
+                        .map(|_| rng.gen_range(1 .. 100))
                         .map(|h| {
                             let mut rtx = RawTransaction::default();
                             rtx.height = h;
 
                             let mut b = vec![];
-                            faketx::new_transactiondata().freeze().unwrap().write(&mut b).unwrap();
+                            faketx::new_transactiondata()
+                                .freeze()
+                                .unwrap()
+                                .write(&mut b)
+                                .unwrap();
                             rtx.data = b;
 
                             rtx
@@ -218,7 +238,11 @@ mod test {
             // Dispatch a set of recievers
             result_tx.send(tx_rs).unwrap();
 
-            let total = try_join_all(tx_rs_workers).await.unwrap().iter().sum::<i32>();
+            let total = try_join_all(tx_rs_workers)
+                .await
+                .unwrap()
+                .iter()
+                .sum::<i32>();
 
             Ok(total)
         });

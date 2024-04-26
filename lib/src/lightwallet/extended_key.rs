@@ -76,13 +76,13 @@ impl ExtendedPrivKey {
         let sig_bytes = signature.as_slice();
         let (key, chain_code) = sig_bytes.split_at(sig_bytes.len() / 2);
         let private_key = SecretKey::from_slice(key)?;
-        Ok(ExtendedPrivKey {
-            private_key,
-            chain_code: chain_code.to_vec(),
-        })
+        Ok(ExtendedPrivKey { private_key, chain_code: chain_code.to_vec() })
     }
 
-    fn sign_hardended_key(&self, index: u32) -> HmacOutput {
+    fn sign_hardended_key(
+        &self,
+        index: u32,
+    ) -> HmacOutput {
         let mut h = Hmac::new_from_slice(&self.chain_code).unwrap();
         h.update(&[0x00]);
         h.update(&self.private_key[..]);
@@ -90,7 +90,10 @@ impl ExtendedPrivKey {
         h.finalize()
     }
 
-    fn sign_normal_key(&self, index: u32) -> HmacOutput {
+    fn sign_normal_key(
+        &self,
+        index: u32,
+    ) -> HmacOutput {
         let mut h = Hmac::new_from_slice(&self.chain_code).unwrap();
         let public_key = PublicKey::from_secret_key(&SECP256K1_SIGN_ONLY, &self.private_key);
         h.update(&public_key.serialize());
@@ -99,7 +102,10 @@ impl ExtendedPrivKey {
     }
 
     /// Derive a child key from ExtendedPrivKey.
-    pub fn derive_private_key(&self, key_index: KeyIndex) -> Result<ExtendedPrivKey, Error> {
+    pub fn derive_private_key(
+        &self,
+        key_index: KeyIndex,
+    ) -> Result<ExtendedPrivKey, Error> {
         if !key_index.is_valid() {
             return Err(Error::InvalidTweak);
         }
@@ -108,12 +114,11 @@ impl ExtendedPrivKey {
             KeyIndex::Normal(index) => self.sign_normal_key(index),
         };
         let sig_bytes = signature.into_bytes();
-        let (key, chain_code) = sig_bytes.as_slice().split_at(sig_bytes.len() / 2);
+        let (key, chain_code) = sig_bytes
+            .as_slice()
+            .split_at(sig_bytes.len() / 2);
         let mut private_key = SecretKey::from_slice(key)?;
         private_key.add_assign(&self.private_key[..])?;
-        Ok(ExtendedPrivKey {
-            private_key,
-            chain_code: chain_code.to_vec(),
-        })
+        Ok(ExtendedPrivKey { private_key, chain_code: chain_code.to_vec() })
     }
 }

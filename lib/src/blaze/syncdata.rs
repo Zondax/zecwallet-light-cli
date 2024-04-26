@@ -53,7 +53,9 @@ impl BlazeSyncData {
 
         self.wallet_options = wallet_options;
 
-        self.block_data.setup_sync(existing_blocks, verified_tree).await;
+        self.block_data
+            .setup_sync(existing_blocks, verified_tree)
+            .await;
     }
 
     // Finish up the sync

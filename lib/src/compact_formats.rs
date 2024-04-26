@@ -1,10 +1,8 @@
-use group::GroupEncoding;
-
 use std::convert::TryFrom;
 use std::convert::TryInto;
 
+use group::GroupEncoding;
 use zcash_note_encryption::{EphemeralKeyBytes, ShieldedOutput};
-
 use zcash_primitives::{
     block::{BlockHash, BlockHeader},
     consensus::{BlockHeight, Parameters},
@@ -79,7 +77,8 @@ impl CompactSaplingOutput {
     /// [`CompactSaplingOutput.cmu`]: #structfield.cmu
     pub fn cmu(&self) -> Result<bls12_381::Scalar, ()> {
         let mut repr = [0; 32];
-        repr.as_mut().copy_from_slice(&self.cmu[..]);
+        repr.as_mut()
+            .copy_from_slice(&self.cmu[..]);
 
         let res = bls12_381::Scalar::from_bytes(&repr);
         let r = if res.is_some().into() { Some(res.unwrap()) } else { None };
@@ -97,7 +96,11 @@ impl CompactSaplingOutput {
     ///
     /// [`CompactSaplingOutput.epk`]: #structfield.epk
     pub fn epk(&self) -> Result<jubjub::ExtendedPoint, ()> {
-        let p = jubjub::ExtendedPoint::from_bytes(&self.epk[..].try_into().map_err(|_| ())?);
+        let p = jubjub::ExtendedPoint::from_bytes(
+            &self.epk[..]
+                .try_into()
+                .map_err(|_| ())?,
+        );
         if p.is_some().into() {
             Ok(p.unwrap())
         } else {

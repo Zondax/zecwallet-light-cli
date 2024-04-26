@@ -1,14 +1,12 @@
-use crate::compact_formats::CompactBlock;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use ff::PrimeField;
-use prost::Message;
 use std::convert::TryFrom;
 use std::io::{self, Read, Write};
 use std::usize;
+
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use ff::PrimeField;
+use prost::Message;
 use zcash_encoding::{Optional, Vector};
 use zcash_primitives::zip32::ExtendedFullViewingKey;
-
-use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
 use zcash_primitives::{
     consensus::BlockHeight,
     memo::{Memo, MemoBytes},
@@ -16,6 +14,9 @@ use zcash_primitives::{
     sapling::{Diversifier, Node, Note, Nullifier, Rseed, SaplingIvk},
     transaction::{components::OutPoint, TxId},
 };
+
+use crate::blaze::fixed_size_buffer::FixedSizeBuffer;
+use crate::compact_formats::CompactBlock;
 
 #[derive(Clone)]
 pub struct BlockData {
@@ -28,9 +29,16 @@ impl BlockData {
         return 20;
     }
 
-    pub(crate) fn new_with(height: u64, hash: &str) -> Self {
+    pub(crate) fn new_with(
+        height: u64,
+        hash: &str,
+    ) -> Self {
         let mut cb = CompactBlock::default();
-        cb.hash = hex::decode(hash).unwrap().into_iter().rev().collect::<Vec<_>>();
+        cb.hash = hex::decode(hash)
+            .unwrap()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>();
 
         let mut ecb = vec![];
         cb.encode(&mut ecb).unwrap();
@@ -72,18 +80,15 @@ impl BlockData {
         hash_bytes.reverse();
         let hash = hex::encode(hash_bytes);
 
-        // We don't need this, but because of a quirk, the version is stored later, so we can't actually
-        // detect the version here. So we write an empty tree and read it back here
+        // We don't need this, but because of a quirk, the version is stored later, so
+        // we can't actually detect the version here. So we write an empty tree
+        // and read it back here
         let tree = CommitmentTree::<Node>::read(&mut reader)?;
         let _tree = if tree.size() == 0 { None } else { Some(tree) };
 
         let version = reader.read_u64::<LittleEndian>()?;
 
-        let ecb = if version <= 11 {
-            vec![]
-        } else {
-            Vector::read(&mut reader, |r| r.read_u8())?
-        };
+        let ecb = if version <= 11 { vec![] } else { Vector::read(&mut reader, |r| r.read_u8())? };
 
         if ecb.is_empty() {
             Ok(BlockData::new_with(height, hash.as_str()))
@@ -92,10 +97,17 @@ impl BlockData {
         }
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         writer.write_i32::<LittleEndian>(self.height as i32)?;
 
-        let hash_bytes: Vec<_> = hex::decode(self.hash()).unwrap().into_iter().rev().collect();
+        let hash_bytes: Vec<_> = hex::decode(self.hash())
+            .unwrap()
+            .into_iter()
+            .rev()
+            .collect();
         writer.write_all(&hash_bytes[..])?;
 
         CommitmentTree::<Node>::empty().write(&mut writer)?;
@@ -115,15 +127,15 @@ pub(crate) struct WitnessCache {
 }
 
 impl WitnessCache {
-    pub fn new(witnesses: Vec<IncrementalWitness<Node>>, top_height: u64) -> Self {
+    pub fn new(
+        witnesses: Vec<IncrementalWitness<Node>>,
+        top_height: u64,
+    ) -> Self {
         Self { witnesses, top_height }
     }
 
     pub fn empty() -> Self {
-        Self {
-            witnesses: vec![],
-            top_height: 0,
-        }
+        Self { witnesses: vec![], top_height: 0 }
     }
 
     pub fn len(&self) -> usize {
@@ -138,12 +150,18 @@ impl WitnessCache {
         self.witnesses.clear();
     }
 
-    pub fn get(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
+    pub fn get(
+        &self,
+        i: usize,
+    ) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(i)
     }
 
     #[cfg(test)]
-    pub fn get_from_last(&self, i: usize) -> Option<&IncrementalWitness<Node>> {
+    pub fn get_from_last(
+        &self,
+        i: usize,
+    ) -> Option<&IncrementalWitness<Node>> {
         self.witnesses.get(self.len() - i - 1)
     }
 
@@ -151,11 +169,19 @@ impl WitnessCache {
         self.witnesses.last()
     }
 
-    pub fn into_fsb(self, fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>) {
-        self.witnesses.into_iter().for_each(|w| fsb.push(w));
+    pub fn into_fsb(
+        self,
+        fsb: &mut FixedSizeBuffer<IncrementalWitness<Node>>,
+    ) {
+        self.witnesses
+            .into_iter()
+            .for_each(|w| fsb.push(w));
     }
 
-    pub fn pop(&mut self, at_height: u64) {
+    pub fn pop(
+        &mut self,
+        at_height: u64,
+    ) {
         while !self.witnesses.is_empty() && self.top_height >= at_height {
             self.witnesses.pop();
             self.top_height -= 1;
@@ -212,7 +238,10 @@ fn read_rseed<R: Read>(mut reader: R) -> io::Result<Rseed> {
     Ok(r)
 }
 
-fn write_rseed<W: Write>(mut writer: W, rseed: &Rseed) -> io::Result<()> {
+fn write_rseed<W: Write>(
+    mut writer: W,
+    rseed: &Rseed,
+) -> io::Result<()> {
     let note_type = match rseed {
         Rseed::BeforeZip212(_) => 1,
         Rseed::AfterZip212(_) => 2,
@@ -234,14 +263,13 @@ impl SaplingNoteData {
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let version = reader.read_u64::<LittleEndian>()?;
 
-        let _account = if version <= 5 {
-            reader.read_u64::<LittleEndian>()?
-        } else {
-            0
-        };
+        let _account = if version <= 5 { reader.read_u64::<LittleEndian>()? } else { 0 };
 
         let ivk = if version <= 20 {
-            ExtendedFullViewingKey::read(&mut reader)?.fvk.vk.ivk()
+            ExtendedFullViewingKey::read(&mut reader)?
+                .fvk
+                .vk
+                .ivk()
         } else {
             let mut ivk_bytes = [0; 32];
             reader.read_exact(&mut ivk_bytes)?;
@@ -274,31 +302,27 @@ impl SaplingNoteData {
             (value, rseed)
         };
 
-        let maybe_note = ivk.to_payment_address(diversifier).unwrap().create_note(value, rseed);
+        let maybe_note = ivk
+            .to_payment_address(diversifier)
+            .unwrap()
+            .create_note(value, rseed);
 
         let note = match maybe_note {
             Some(n) => Ok(n),
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Couldn't create the note for the address",
-            )),
+            None => Err(io::Error::new(io::ErrorKind::InvalidInput, "Couldn't create the note for the address")),
         }?;
 
         let witnesses_vec = Vector::read(&mut reader, |r| IncrementalWitness::<Node>::read(r))?;
-        let top_height = if version < 20 {
-            0
-        } else {
-            reader.read_u64::<LittleEndian>()?
-        };
+        let top_height = if version < 20 { 0 } else { reader.read_u64::<LittleEndian>()? };
         let witnesses = WitnessCache::new(witnesses_vec, top_height);
 
         let mut nullifier = [0u8; 32];
         reader.read_exact(&mut nullifier)?;
         let nullifier = Nullifier(nullifier);
 
-        // Note that this is only the spent field, we ignore the unconfirmed_spent field.
-        // The reason is that unconfirmed spents are only in memory, and we need to get the actual value of spent
-        // from the blockchain anyway.
+        // Note that this is only the spent field, we ignore the unconfirmed_spent
+        // field. The reason is that unconfirmed spents are only in memory, and
+        // we need to get the actual value of spent from the blockchain anyway.
         let spent = if version <= 5 {
             let spent = Optional::read(&mut reader, |r| {
                 let mut txid_bytes = [0u8; 32];
@@ -306,11 +330,8 @@ impl SaplingNoteData {
                 Ok(TxId::from_bytes(txid_bytes))
             })?;
 
-            let spent_at_height = if version >= 2 {
-                Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-            } else {
-                None
-            };
+            let spent_at_height =
+                if version >= 2 { Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())? } else { None };
 
             if spent.is_some() && spent_at_height.is_some() {
                 Some((spent.unwrap(), spent_at_height.unwrap() as u32))
@@ -344,21 +365,21 @@ impl SaplingNoteData {
 
             // Attempt to read memo, first as text, else as arbitrary 512 bytes
             match MemoBytes::from_bytes(&memo_bytes) {
-                Ok(mb) => match Memo::try_from(mb.clone()) {
-                    Ok(m) => Ok(m),
-                    Err(_) => Ok(Memo::Future(mb)),
+                Ok(mb) => {
+                    match Memo::try_from(mb.clone()) {
+                        Ok(m) => Ok(m),
+                        Err(_) => Ok(Memo::Future(mb)),
+                    }
                 },
-                Err(e) => Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("Couldn't create memo: {}", e),
-                )),
+                Err(e) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Couldn't create memo: {}", e))),
             }
         })?;
 
         let is_change: bool = reader.read_u8()? > 0;
 
         let have_spending_key = if version <= 2 {
-            true // Will get populated in the lightwallet::read() method, for now assume true
+            true // Will get populated in the lightwallet::read() method, for
+                 // now assume true
         } else {
             reader.read_u8()? > 0
         };
@@ -377,7 +398,10 @@ impl SaplingNoteData {
         })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         // Write a version number first, so we can later upgrade this if needed.
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
@@ -385,8 +409,8 @@ impl SaplingNoteData {
 
         writer.write_all(&self.diversifier.0)?;
 
-        // Writing the note means writing the note.value and note.r. The Note is recoverable
-        // from these 2 values and the Payment address.
+        // Writing the note means writing the note.value and note.r. The Note is
+        // recoverable from these 2 values and the Payment address.
         writer.write_u64::<LittleEndian>(self.note.value)?;
 
         write_rseed(&mut writer, &self.note.rseed)?;
@@ -406,16 +430,14 @@ impl SaplingNoteData {
             w.write_u32::<LittleEndian>(height)
         })?;
 
-        Optional::write(&mut writer, self.memo.as_ref(), |w, m| {
-            w.write_all(m.encode().as_array())
-        })?;
+        Optional::write(&mut writer, self.memo.as_ref(), |w, m| w.write_all(m.encode().as_array()))?;
 
         writer.write_u8(if self.is_change { 1 } else { 0 })?;
 
         writer.write_u8(if self.have_spending_key { 1 } else { 0 })?;
 
-        // Note that we don't write the unconfirmed_spent field, because if the wallet is restarted,
-        // we don't want to be beholden to any expired txns
+        // Note that we don't write the unconfirmed_spent field, because if the wallet
+        // is restarted, we don't want to be beholden to any expired txns
 
         Ok(())
     }
@@ -454,7 +476,13 @@ impl Utxo {
         let mut address_bytes = vec![0; address_len as usize];
         reader.read_exact(&mut address_bytes)?;
         let address = String::from_utf8(address_bytes).unwrap();
-        assert_eq!(address.chars().take(1).collect::<Vec<char>>()[0], 't');
+        assert_eq!(
+            address
+                .chars()
+                .take(1)
+                .collect::<Vec<char>>()[0],
+            't'
+        );
 
         let mut txid_bytes = [0; 32];
         reader.read_exact(&mut txid_bytes)?;
@@ -476,11 +504,8 @@ impl Utxo {
             Ok(TxId::from_bytes(txbytes))
         })?;
 
-        let spent_at_height = if version <= 1 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())?
-        };
+        let spent_at_height =
+            if version <= 1 { None } else { Optional::read(&mut reader, |r| r.read_i32::<LittleEndian>())? };
 
         let unconfirmed_spent = if version <= 2 {
             None
@@ -494,20 +519,13 @@ impl Utxo {
             })?
         };
 
-        Ok(Utxo {
-            address,
-            txid,
-            output_index,
-            script,
-            value,
-            height,
-            spent_at_height,
-            spent,
-            unconfirmed_spent,
-        })
+        Ok(Utxo { address, txid, output_index, script, value, height, spent_at_height, spent, unconfirmed_spent })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         writer.write_u32::<LittleEndian>(self.address.as_bytes().len() as u32)?;
@@ -553,20 +571,22 @@ impl OutgoingTxMetadata {
         let mut memo_bytes = [0u8; 512];
         reader.read_exact(&mut memo_bytes)?;
         let memo = match MemoBytes::from_bytes(&memo_bytes) {
-            Ok(mb) => match Memo::try_from(mb.clone()) {
-                Ok(m) => Ok(m),
-                Err(_) => Ok(Memo::Future(mb)),
+            Ok(mb) => {
+                match Memo::try_from(mb.clone()) {
+                    Ok(m) => Ok(m),
+                    Err(_) => Ok(Memo::Future(mb)),
+                }
             },
-            Err(e) => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("Couldn't create memo: {}", e),
-            )),
+            Err(e) => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("Couldn't create memo: {}", e))),
         }?;
 
         Ok(OutgoingTxMetadata { address, value, memo })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         // Strings are written as len + utf8
         writer.write_u64::<LittleEndian>(self.address.as_bytes().len() as u64)?;
         writer.write_all(self.address.as_bytes())?;
@@ -626,22 +646,31 @@ impl WalletTx {
         TxId::from_bytes(txid_bytes)
     }
 
-    pub fn get_price(datetime: u64, price: &WalletZecPriceInfo) -> Option<f64> {
+    pub fn get_price(
+        datetime: u64,
+        price: &WalletZecPriceInfo,
+    ) -> Option<f64> {
         match price.zec_price {
             None => None,
             Some((t, p)) => {
-                // If the price was fetched within 24 hours of this Tx, we use the "current" price
-                // else, we mark it as None, for the historical price fetcher to get
+                // If the price was fetched within 24 hours of this Tx, we use the "current"
+                // price else, we mark it as None, for the historical price
+                // fetcher to get
                 if (t as i64 - datetime as i64).abs() < 24 * 60 * 60 {
                     Some(p)
                 } else {
                     None
                 }
-            }
+            },
         }
     }
 
-    pub fn new(height: BlockHeight, datetime: u64, txid: &TxId, unconfirmed: bool) -> Self {
+    pub fn new(
+        height: BlockHeight,
+        datetime: u64,
+        txid: &TxId,
+        unconfirmed: bool,
+    ) -> Self {
         WalletTx {
             block: height,
             unconfirmed,
@@ -665,11 +694,7 @@ impl WalletTx {
 
         let unconfirmed = if version <= 20 { false } else { reader.read_u8()? == 1 };
 
-        let datetime = if version >= 4 {
-            reader.read_u64::<LittleEndian>()?
-        } else {
-            0
-        };
+        let datetime = if version >= 4 { reader.read_u64::<LittleEndian>()? } else { 0 };
 
         let mut txid_bytes = [0u8; 32];
         reader.read_exact(&mut txid_bytes)?;
@@ -687,11 +712,8 @@ impl WalletTx {
 
         let full_tx_scanned = reader.read_u8()? > 0;
 
-        let zec_price = if version <= 4 {
-            None
-        } else {
-            Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())?
-        };
+        let zec_price =
+            if version <= 4 { None } else { Optional::read(&mut reader, |r| r.read_f64::<LittleEndian>())? };
 
         let spent_nullifiers = if version <= 5 {
             vec![]
@@ -719,7 +741,10 @@ impl WalletTx {
         })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         let block: u32 = self.block.into();
@@ -765,18 +790,28 @@ pub struct SpendableNote {
 }
 
 impl SpendableNote {
-    pub fn from(txid: TxId, nd: &SaplingNoteData, anchor_offset: usize, ivk: &SaplingIvk) -> Option<Self> {
-        // Include only notes that haven't been spent, or haven't been included in an unconfirmed spend yet.
+    pub fn from(
+        txid: TxId,
+        nd: &SaplingNoteData,
+        anchor_offset: usize,
+        ivk: &SaplingIvk,
+    ) -> Option<Self> {
+        // Include only notes that haven't been spent, or haven't been included in an
+        // unconfirmed spend yet.
         if nd.spent.is_none() && nd.unconfirmed_spent.is_none() && nd.witnesses.len() >= (anchor_offset + 1) {
-            let witness = nd.witnesses.get(nd.witnesses.len() - anchor_offset - 1);
+            let witness = nd
+                .witnesses
+                .get(nd.witnesses.len() - anchor_offset - 1);
 
-            witness.map(|w| SpendableNote {
-                txid,
-                nullifier: nd.nullifier,
-                diversifier: nd.diversifier,
-                note: nd.note.clone(),
-                witness: w.clone(),
-                ivk: SaplingIvk(ivk.0),
+            witness.map(|w| {
+                SpendableNote {
+                    txid,
+                    nullifier: nd.nullifier,
+                    diversifier: nd.diversifier,
+                    note: nd.note.clone(),
+                    witness: w.clone(),
+                    ivk: SaplingIvk(ivk.0),
+                }
             })
         } else {
             None
@@ -829,7 +864,8 @@ impl WalletZecPriceInfo {
             ));
         }
 
-        // The "current" zec price is not persisted, since it is almost certainly outdated
+        // The "current" zec price is not persisted, since it is almost certainly
+        // outdated
         let zec_price = None;
 
         // Currency is only USD for now
@@ -838,21 +874,17 @@ impl WalletZecPriceInfo {
         let last_historical_prices_fetched_at = Optional::read(&mut reader, |r| r.read_u64::<LittleEndian>())?;
         let historical_prices_retry_count = reader.read_u64::<LittleEndian>()?;
 
-        Ok(Self {
-            zec_price,
-            currency,
-            last_historical_prices_fetched_at,
-            historical_prices_retry_count,
-        })
+        Ok(Self { zec_price, currency, last_historical_prices_fetched_at, historical_prices_retry_count })
     }
 
-    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+    pub fn write<W: Write>(
+        &self,
+        mut writer: W,
+    ) -> io::Result<()> {
         writer.write_u64::<LittleEndian>(Self::serialized_version())?;
 
         // We don't write the currency zec price or the currency yet.
-        Optional::write(&mut writer, self.last_historical_prices_fetched_at, |w, t| {
-            w.write_u64::<LittleEndian>(t)
-        })?;
+        Optional::write(&mut writer, self.last_historical_prices_fetched_at, |w, t| w.write_u64::<LittleEndian>(t))?;
         writer.write_u64::<LittleEndian>(self.historical_prices_retry_count)?;
 
         Ok(())

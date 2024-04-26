@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::sync::mpsc;
 
 use async_trait::async_trait;
 use ledger_transport::Exchange;
@@ -9,7 +10,6 @@ use ledger_zcash::{
 };
 use rand::rngs::OsRng;
 use secp256k1::PublicKey as SecpPublicKey;
-use std::sync::mpsc;
 use tokio::sync::RwLock;
 use zcash_client_backend::encoding::encode_payment_address;
 use zcash_primitives::transaction::builder::Progress;
@@ -29,12 +29,11 @@ use zcash_primitives::{
 };
 use zx_bip44::BIP44Path;
 
+use super::{Builder, InMemoryKeys, Keystore, KeystoreBuilderLifetime, SaplingMetadata, TxProver};
 use crate::{
     lightclient::lightclient_config::{LightClientConfig, GAP_RULE_UNUSED_ADDRESSES},
     lightwallet::utils::compute_taddr,
 };
-
-use super::{Builder, InMemoryKeys, Keystore, KeystoreBuilderLifetime, SaplingMetadata, TxProver};
 
 #[derive(Debug, thiserror::Error)]
 pub enum LedgerError {
@@ -76,12 +75,12 @@ impl From<LedgerError> for std::io::Error {
     }
 }
 
-//we use btreemap so we can get an ordered list when iterating by key
+// we use btreemap so we can get an ordered list when iterating by key
 pub struct LedgerKeystore<P> {
     pub config: LightClientConfig<P>,
 
     app: ZcashApp<TransportNativeHID>,
-    //this is a public key with a specific path
+    // this is a public key with a specific path
     // used to "identify" a ledger
     // this is useful to detect when a different ledger
     // is connected instead of the one used with the keystore
@@ -90,7 +89,7 @@ pub struct LedgerKeystore<P> {
 
     transparent_addrs: RwLock<BTreeMap<[u32; 5], SecpPublicKey>>,
 
-    //associated a path with an ivk and the default diversifier
+    // associated a path with an ivk and the default diversifier
     shielded_addrs: RwLock<BTreeMap<[u32; 3], (SaplingIvk, Diversifier, OutgoingViewingKey)>>,
 }
 
@@ -108,7 +107,8 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     /// Attempt to create a handle to a ledger zcash ap
     ///
     /// Will attempt to connect to the first available device,
-    /// but won't verify that the correct app is open or that is a "known" device
+    /// but won't verify that the correct app is open or that is a "known"
+    /// device
     fn connect_ledger() -> Result<ZcashApp<TransportNativeHID>, LedgerError> {
         let hidapi = ledger_transport_hid::hidapi::HidApi::new().map_err(|hid| LedgerHIDError::Hid(hid))?;
 
@@ -126,21 +126,17 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
         let app = Self::connect_ledger()?;
         let ledger_id = Self::get_id(&app).await?;
 
-        Ok(Self {
-            app,
-            config,
-            ledger_id,
-            transparent_addrs: Default::default(),
-            shielded_addrs: Default::default(),
-        })
+        Ok(Self { app, config, ledger_id, transparent_addrs: Default::default(), shielded_addrs: Default::default() })
     }
 
     fn path_slice_to_bip44(path: &[ChildIndex]) -> Result<BIP44Path, LedgerError> {
         let path = path
             .iter()
-            .map(|index| match index {
-                ChildIndex::NonHardened(idx) => *idx,
-                ChildIndex::Hardened(idx) => *idx + (1 << 31),
+            .map(|index| {
+                match index {
+                    ChildIndex::NonHardened(idx) => *idx,
+                    ChildIndex::Hardened(idx) => *idx + (1 << 31),
+                }
             })
             .take(5)
             .collect::<Vec<_>>();
@@ -148,8 +144,12 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
         BIP44Path::from_slice(&path).map_err(|_| LedgerError::InvalidPathLength(5))
     }
 
-    /// Attempt to lookup stored data for given path and compute payment address thereafter
-    pub async fn payment_address_from_path(&self, path: &[u32; 3]) -> Option<PaymentAddress> {
+    /// Attempt to lookup stored data for given path and compute payment address
+    /// thereafter
+    pub async fn payment_address_from_path(
+        &self,
+        path: &[u32; 3],
+    ) -> Option<PaymentAddress> {
         self.shielded_addrs
             .read()
             .await
@@ -161,22 +161,27 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     ///
     /// The defualt diversifier is the first valid diversifier starting
     /// from index 0
-    async fn get_default_div_from(app: &ZcashApp<TransportNativeHID>, idx: u32) -> Result<Diversifier, LedgerError> {
+    async fn get_default_div_from(
+        app: &ZcashApp<TransportNativeHID>,
+        idx: u32,
+    ) -> Result<Diversifier, LedgerError> {
         let mut index = DiversifierIndex::new();
 
         loop {
             let divs = app.get_div_list(idx, &index.0).await?;
             let divs: &[[u8; 11]] = bytemuck::cast_slice(&divs);
 
-            //find the first div that is not all 0s
+            // find the first div that is not all 0s
             // all 0s is when it's an invalid diversifier
             for div in divs {
                 if div != &[0; 11] {
                     return Ok(Diversifier(*div));
                 }
 
-                //increment the index for each diversifier returned
-                index.increment().map_err(|_| LedgerError::DiversifierIndexOverflow)?;
+                // increment the index for each diversifier returned
+                index
+                    .increment()
+                    .map_err(|_| LedgerError::DiversifierIndexOverflow)?;
             }
         }
     }
@@ -185,7 +190,10 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     ///
     /// The default diversifier is the first valid diversifier starting from
     /// index 0
-    pub async fn get_default_div(&self, idx: u32) -> Result<Diversifier, LedgerError> {
+    pub async fn get_default_div(
+        &self,
+        idx: u32,
+    ) -> Result<Diversifier, LedgerError> {
         Self::get_default_div_from(&self.app, idx).await
     }
 
@@ -228,7 +236,11 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     pub async fn get_all_tkeys(&self) -> impl Iterator<Item = SecpPublicKey> {
         let guard = self.transparent_addrs.read().await;
 
-        guard.values().cloned().collect::<Vec<_>>().into_iter()
+        guard
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Retrieve all the cached/known transparent addresses
@@ -236,7 +248,9 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     /// Convenient wrapper over `get_all_tkeys`
     pub async fn get_all_taddrs(&self) -> impl Iterator<Item = String> {
         let prefix = self.config.base58_pubkey_address();
-        self.get_all_tkeys().await.map(move |k| compute_taddr(&k, &prefix, &[]))
+        self.get_all_tkeys()
+            .await
+            .map(move |k| compute_taddr(&k, &prefix, &[]))
     }
 
     /// Retrieve a HashMap of transparent addresses to public key
@@ -245,19 +259,19 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
             .read()
             .await
             .values()
-            .map(|key| {
-                (
-                    compute_taddr(key, &self.config.base58_pubkey_address(), &[]),
-                    key.clone(),
-                )
-            })
+            .map(|key| (compute_taddr(key, &self.config.base58_pubkey_address(), &[]), key.clone()))
             .collect()
     }
 
     /// Retrieve the first shielded key present in the keystore
     pub async fn first_shielded(&self) -> Option<[u32; 3]> {
-        //retrieve the first key
-        self.shielded_addrs.read().await.keys().next().cloned()
+        // retrieve the first key
+        self.shielded_addrs
+            .read()
+            .await
+            .keys()
+            .next()
+            .cloned()
     }
 
     pub async fn compute_nullifier(
@@ -286,10 +300,13 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     }
 }
 
-//in-memory keystore compatibility methods
+// in-memory keystore compatibility methods
 impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
     /// Retrieve the OVK of a given path
-    pub async fn get_ovk_of(&self, path: &[u32; 3]) -> Option<OutgoingViewingKey> {
+    pub async fn get_ovk_of(
+        &self,
+        path: &[u32; 3],
+    ) -> Option<OutgoingViewingKey> {
         self.shielded_addrs
             .read()
             .await
@@ -299,7 +316,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
     /// Given an address, verify that we have N addresses
     /// after that one (if present in the cache)
-    pub async fn ensure_hd_taddresses(&mut self, address: &str) {
+    pub async fn ensure_hd_taddresses(
+        &mut self,
+        address: &str,
+    ) {
         if GAP_RULE_UNUSED_ADDRESSES == 0 {
             return;
         }
@@ -311,19 +331,19 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             .get_mut()
             .iter()
             .rev()
-            //get the last N addresses
+            // get the last N addresses
             .take(GAP_RULE_UNUSED_ADDRESSES)
-            //get the transparent address of each
+            // get the transparent address of each
             .map(move |(path, key)| (*path, compute_taddr(&key, &prefix, &[])))
             .enumerate()
-            //find the one that matches the needle
+            // find the one that matches the needle
             .find(|(_, (_, s))| s == address);
 
-        //if we find the given address in the last N
+        // if we find the given address in the last N
         if let Some((i, (path, _))) = last_address_used_pos {
             // then we should cache/generate N - i addresses
-            for i in 0..(GAP_RULE_UNUSED_ADDRESSES - i) {
-                //increase the last index by i
+            for i in 0 .. (GAP_RULE_UNUSED_ADDRESSES - i) {
+                // increase the last index by i
                 // +1 for the 0th i
                 let path = [
                     ChildIndex::from_index(path[0]),
@@ -333,8 +353,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
                     ChildIndex::from_index(path[4] + 1 + i as u32),
                 ];
 
-                //add the new key
-                //TODO: report errors? stop at first error?
+                // add the new key
+                // TODO: report errors? stop at first error?
                 let _ = self.get_t_pubkey(&path).await;
             }
         }
@@ -342,7 +362,10 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
     /// Given an address, verify that we have N addresses
     /// after that one (if present in the cache)
-    pub async fn ensure_hd_zaddresses(&mut self, address: &str) {
+    pub async fn ensure_hd_zaddresses(
+        &mut self,
+        address: &str,
+    ) {
         if GAP_RULE_UNUSED_ADDRESSES == 0 {
             return;
         }
@@ -354,9 +377,9 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             .get_mut()
             .iter()
             .rev()
-            //get the last N addresses
+            // get the last N addresses
             .take(GAP_RULE_UNUSED_ADDRESSES)
-            //get the payment address of each
+            // get the payment address of each
             .map(move |(path, (ivk, d, _))| {
                 (
                     *path,
@@ -364,17 +387,17 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
                         .expect("known ivk and diversifier to get payment address"),
                 )
             })
-            //get the bech32 encoded address of each
+            // get the bech32 encoded address of each
             .map(move |(path, zaddr)| (path, encode_payment_address(hrp, &zaddr)))
             .enumerate()
-            //find the one that matches the needle
+            // find the one that matches the needle
             .find(|(_, (_, s))| s == address);
 
-        //if we find the given address in the last N
+        // if we find the given address in the last N
         if let Some((i, (path, _))) = last_address_used_pos {
             // then we should cache/generate N - i addresses
-            for i in 0..(GAP_RULE_UNUSED_ADDRESSES - i) {
-                //increase the last index by i
+            for i in 0 .. (GAP_RULE_UNUSED_ADDRESSES - i) {
+                // increase the last index by i
                 // +1 for the 0th i
                 let path = [
                     ChildIndex::from_index(path[0]),
@@ -382,8 +405,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
                     ChildIndex::from_index(path[2] + 1 + i as u32),
                 ];
 
-                //add the new key
-                //TODO: report errors? stop at first error?
+                // add the new key
+                // TODO: report errors? stop at first error?
                 let _ = self.get_z_payment_address(&path).await;
             }
         }
@@ -391,7 +414,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
     /// Create a new transparent address with path +1 from the latest one
     pub async fn add_taddr(&mut self) -> String {
-        //find the highest path we have
+        // find the highest path we have
         let path = self
             .transparent_addrs
             .get_mut()
@@ -419,7 +442,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
     /// Create a new shielded address with path +1 from the latest one
     pub async fn add_zaddr(&mut self) -> String {
-        //find the highest path we have
+        // find the highest path we have
         let path = self
             .shielded_addrs
             .get_mut()
@@ -427,11 +450,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             .last()
             .cloned()
             .map(|path| {
-                [
-                    ChildIndex::from_index(path[0]),
-                    ChildIndex::from_index(path[1]),
-                    ChildIndex::from_index(path[2] + 1),
-                ]
+                [ChildIndex::from_index(path[0]), ChildIndex::from_index(path[1]), ChildIndex::from_index(path[2] + 1)]
             })
             .unwrap_or_else(|| InMemoryKeys::<P>::z_derivation_path(self.config.get_coin_type(), 0));
 
@@ -448,7 +467,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
     }
 }
 
-//serialization and deserialization stuff
+// serialization and deserialization stuff
 impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
     /// Keystore version
     ///
@@ -456,16 +475,19 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
     const VERSION: u64 = 0;
 
     /// Serialize the keystore to a writer
-    pub async fn write<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    pub async fn write<W: std::io::Write>(
+        &self,
+        mut writer: W,
+    ) -> std::io::Result<()> {
         use byteorder::{LittleEndian, WriteBytesExt};
 
         writer.write_u64::<LittleEndian>(Self::VERSION)?;
 
-        //write the ledger "id"
+        // write the ledger "id"
         let id = self.ledger_id.serialize();
         writer.write_all(&id)?;
 
-        //write the transparent paths
+        // write the transparent paths
         let transparent_paths = self
             .transparent_addrs
             .read()
@@ -488,7 +510,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             writer.write_all(&path)?;
         }
 
-        //write the shielded paths
+        // write the shielded paths
         let shielded_paths = self
             .shielded_addrs
             .read()
@@ -506,30 +528,29 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
         Ok(())
     }
 
-    pub async fn read<R: std::io::Read>(mut reader: R, config: &LightClientConfig<P>) -> std::io::Result<Self> {
-        use byteorder::{LittleEndian, ReadBytesExt};
+    pub async fn read<R: std::io::Read>(
+        mut reader: R,
+        config: &LightClientConfig<P>,
+    ) -> std::io::Result<Self> {
         use std::io::{self, ErrorKind};
 
-        //read version and verify it's compatible with the code
+        use byteorder::{LittleEndian, ReadBytesExt};
+
+        // read version and verify it's compatible with the code
         let version = reader.read_u64::<LittleEndian>()?;
         if version > Self::VERSION {
-            let e = format!(
-                "Don't know how to read ledger wallet version {}. Do you have the latest version?",
-                version
-            );
+            let e =
+                format!("Don't know how to read ledger wallet version {}. Do you have the latest version?", version);
             return Err(io::Error::new(ErrorKind::InvalidData, e));
         }
 
-        //retrieve the ledger id and verify it matches with the aocnnected device
+        // retrieve the ledger id and verify it matches with the aocnnected device
         let ledger_id = {
             let mut buf = [0; secp256k1::constants::PUBLIC_KEY_SIZE];
             reader.read_exact(&mut buf)?;
 
             SecpPublicKey::from_slice(&buf).map_err(|e| {
-                io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("Bad public key stored for ledger id: {:?}", e),
-                )
+                io::Error::new(ErrorKind::InvalidData, format!("Bad public key stored for ledger id: {:?}", e))
             })?
         };
 
@@ -541,11 +562,11 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             ));
         }
 
-        //read the transparent paths
+        // read the transparent paths
         // the keys will be retrieved one by one from the device
         let transparent_addrs_len = reader.read_u64::<LittleEndian>()?;
         let mut transparent_addrs = BTreeMap::new();
-        for _ in 0..transparent_addrs_len {
+        for _ in 0 .. transparent_addrs_len {
             let path = {
                 let mut buf = [0; 4 * 5];
                 reader.read_exact(&mut buf)?;
@@ -570,12 +591,12 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
             transparent_addrs.insert(path, key);
         }
 
-        //read the transparent paths
+        // read the transparent paths
         // the keys and the diversifiers
         // will be retrieved one by one from the device
         let shielded_addrs_len = reader.read_u64::<LittleEndian>()?;
         let mut shielded_addrs = BTreeMap::new();
-        for _ in 0..shielded_addrs_len {
+        for _ in 0 .. shielded_addrs_len {
             let path = {
                 let mut buf = [0; 4 * 3];
                 reader.read_exact(&mut buf)?;
@@ -588,7 +609,7 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
                 ]
             };
 
-            //ZIP32 uses fixed path, so the actual index
+            // ZIP32 uses fixed path, so the actual index
             // is only the latest element
             let idx = path[2];
 
@@ -623,27 +644,44 @@ impl<P: consensus::Parameters + 'static> LedgerKeystore<P> {
 impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
     type Error = LedgerError;
 
-    async fn get_t_pubkey(&self, path: &[ChildIndex]) -> Result<SecpPublicKey, Self::Error> {
+    async fn get_t_pubkey(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<SecpPublicKey, Self::Error> {
         let path = Self::path_slice_to_bip44(path)?;
-        //avoid keeping the read guard so we can get the write guard later if necessary
+        // avoid keeping the read guard so we can get the write guard later if necessary
         // without causing a deadlock
-        let cached = self.transparent_addrs.read().await.get(&path.0).map(|k| k.clone());
+        let cached = self
+            .transparent_addrs
+            .read()
+            .await
+            .get(&path.0)
+            .map(|k| k.clone());
 
         match cached {
             Some(key) => Ok(key),
             None => {
-                let addr = self.app.get_address_unshielded(&path, false).await?;
+                let addr = self
+                    .app
+                    .get_address_unshielded(&path, false)
+                    .await?;
 
                 let pkey = SecpPublicKey::from_slice(&addr.public_key).map_err(|_| LedgerError::InvalidPublicKey)?;
-                self.transparent_addrs.write().await.insert(path.0, pkey);
+                self.transparent_addrs
+                    .write()
+                    .await
+                    .insert(path.0, pkey);
 
                 Ok(pkey)
-            }
+            },
         }
     }
 
     /// Retrieve the shielded payment address for a given path
-    async fn get_z_payment_address(&self, path: &[ChildIndex]) -> Result<PaymentAddress, Self::Error> {
+    async fn get_z_payment_address(
+        &self,
+        path: &[ChildIndex],
+    ) -> Result<PaymentAddress, Self::Error> {
         if path.len() != 3 {
             return Err(LedgerError::InvalidPathLength(3));
         }
@@ -651,9 +689,11 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
         let path = {
             let elements = path
                 .iter()
-                .map(|ci| match ci {
-                    ChildIndex::NonHardened(i) => *i,
-                    ChildIndex::Hardened(i) => *i + (1 << 31),
+                .map(|ci| {
+                    match ci {
+                        ChildIndex::NonHardened(i) => *i,
+                        ChildIndex::Hardened(i) => *i + (1 << 31),
+                    }
                 })
                 .enumerate();
 
@@ -665,22 +705,36 @@ impl<P: Parameters + Send + Sync + 'static> Keystore for LedgerKeystore<P> {
             array
         };
 
-        match self.payment_address_from_path(&path).await {
+        match self
+            .payment_address_from_path(&path)
+            .await
+        {
             Some(key) => Ok(key),
             None => {
-                let ivk = self.app.get_ivk(path[2]).await.map(|ivk| SaplingIvk(ivk))?;
+                let ivk = self
+                    .app
+                    .get_ivk(path[2])
+                    .await
+                    .map(|ivk| SaplingIvk(ivk))?;
 
                 let div = self.get_default_div(path[2]).await?;
 
-                let ovk = self.app.get_ovk(path[2]).await.map(|ovk| OutgoingViewingKey(ovk.0))?;
+                let ovk = self
+                    .app
+                    .get_ovk(path[2])
+                    .await
+                    .map(|ovk| OutgoingViewingKey(ovk.0))?;
 
                 let addr = ivk
                     .to_payment_address(div)
                     .expect("guaranteed valid diversifier should get a payment address");
 
-                self.shielded_addrs.write().await.insert(path, (ivk, div, ovk));
+                self.shielded_addrs
+                    .write()
+                    .await
+                    .insert(path, (ivk, div, ovk));
                 Ok(addr)
-            }
+            },
         }
     }
 
@@ -706,18 +760,20 @@ pub struct LedgerBuilder<'k, P: Parameters> {
 }
 
 impl<'a, P: Parameters> LedgerBuilder<'a, P> {
-    pub fn new(params: P, target_height: BlockHeight, keystore: &'a mut LedgerKeystore<P>) -> Self {
-        Self {
-            keystore,
-            params,
-            target_height,
-            inner: ZBuilder::new(),
-            progress_notifier: None,
-        }
+    pub fn new(
+        params: P,
+        target_height: BlockHeight,
+        keystore: &'a mut LedgerKeystore<P>,
+    ) -> Self {
+        Self { keystore, params, target_height, inner: ZBuilder::new(), progress_notifier: None }
     }
 
-    /// Attempt to lookup the corresponding path in the keystore, given a viewing key
-    pub fn lookup_shielded_from_ivk(&mut self, ivk: &SaplingIvk) -> Result<[u32; 3], LedgerError> {
+    /// Attempt to lookup the corresponding path in the keystore, given a
+    /// viewing key
+    pub fn lookup_shielded_from_ivk(
+        &mut self,
+        ivk: &SaplingIvk,
+    ) -> Result<[u32; 3], LedgerError> {
         let ivk = ivk.to_repr();
 
         self.keystore
@@ -729,7 +785,10 @@ impl<'a, P: Parameters> LedgerBuilder<'a, P> {
             .ok_or(LedgerError::KeyNotFound)
     }
 
-    pub fn lookup_transparent_from_pubkey(&mut self, pkey: &SecpPublicKey) -> Result<[u32; 5], LedgerError> {
+    pub fn lookup_transparent_from_pubkey(
+        &mut self,
+        pkey: &SecpPublicKey,
+    ) -> Result<[u32; 5], LedgerError> {
         self.keystore
             .transparent_addrs
             .get_mut()
@@ -753,7 +812,8 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
     ) -> Result<&mut Self, Self::Error> {
         let path = self.lookup_shielded_from_ivk(&key)?;
 
-        self.inner.add_sapling_spend(path[2], diversifier, note, merkle_path)?;
+        self.inner
+            .add_sapling_spend(path[2], diversifier, note, merkle_path)?;
 
         Ok(self)
     }
@@ -765,7 +825,8 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
         value: Amount,
         memo: MemoBytes,
     ) -> Result<&mut Self, Self::Error> {
-        self.inner.add_sapling_output(ovk, to, value, Some(memo))?;
+        self.inner
+            .add_sapling_output(ovk, to, value, Some(memo))?;
         Ok(self)
     }
 
@@ -777,24 +838,37 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
     ) -> Result<&mut Self, Self::Error> {
         let path = self.lookup_transparent_from_pubkey(&key)?;
 
-        self.inner.add_transparent_input(BIP44Path(path), key, utxo, coin)?;
+        self.inner
+            .add_transparent_input(BIP44Path(path), key, utxo, coin)?;
 
         Ok(self)
     }
 
-    fn add_transparent_output(&mut self, to: &TransparentAddress, value: Amount) -> Result<&mut Self, Self::Error> {
-        self.inner.add_transparent_output(to, value)?;
+    fn add_transparent_output(
+        &mut self,
+        to: &TransparentAddress,
+        value: Amount,
+    ) -> Result<&mut Self, Self::Error> {
+        self.inner
+            .add_transparent_output(to, value)?;
 
         Ok(self)
     }
 
-    fn send_change_to(&mut self, ovk: OutgoingViewingKey, to: PaymentAddress) -> &mut Self {
+    fn send_change_to(
+        &mut self,
+        ovk: OutgoingViewingKey,
+        to: PaymentAddress,
+    ) -> &mut Self {
         self.inner.send_change_to(ovk, to);
 
         self
     }
 
-    fn with_progress_notifier(&mut self, progress_notifier: Option<mpsc::Sender<Progress>>) {
+    fn with_progress_notifier(
+        &mut self,
+        progress_notifier: Option<mpsc::Sender<Progress>>,
+    ) {
         self.progress_notifier = progress_notifier;
     }
 
