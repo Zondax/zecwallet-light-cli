@@ -27,7 +27,6 @@ use zcash_primitives::transaction::{Transaction, TransactionData};
 use zcash_primitives::zip32::{ExtendedFullViewingKey, ExtendedSpendingKey};
 
 use super::checkpoints;
-use super::lightclient_config::UnitTestNetwork;
 use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use crate::blaze::fetch_full_tx::FetchFullTxns;
 use crate::blaze::test_utils::{FakeCompactBlockList, FakeTransaction};

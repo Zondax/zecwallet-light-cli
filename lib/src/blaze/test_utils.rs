@@ -630,7 +630,7 @@ impl TxProver for FakeTxProver {
 }
 
 #[cfg(feature = "hsm-compat")]
-impl zcash_hsmbuilder::txprover::HsmTxProver for FakeTxProver {
+impl ledger_zcash_builder::txprover::HsmTxProver for FakeTxProver {
     type SaplingProvingContext = <Self as TxProver>::SaplingProvingContext;
 
     fn new_sapling_proving_context(&self) -> Self::SaplingProvingContext {
