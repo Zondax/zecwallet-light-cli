@@ -27,7 +27,6 @@ use zcash_primitives::consensus::{self, BlockHeight, BranchId};
 use zcash_primitives::merkle_tree::CommitmentTree;
 use zcash_primitives::sapling::Node;
 use zcash_primitives::transaction::{Transaction, TxId};
-use crate::lightclient::lightclient_config::UnitTestNetwork;
 
 use super::lightclient_config::{LightClientConfig, UnitTestNetwork};
 use super::LightClient;

@@ -1661,7 +1661,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     #[cfg(test)]
-    pub async fn test_do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<(String, Amount), String> {
+    pub async fn test_do_send(&self, addrs: Vec<(&str, u64, Option<String>)>) -> Result<(String, zcash_primitives::transaction::components::Amount), String> {
 
 
         let branch_id = self.consensus_branch_id().await;

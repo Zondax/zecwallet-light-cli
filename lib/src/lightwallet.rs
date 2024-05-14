@@ -1539,7 +1539,6 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
 mod test {
     use zcash_primitives::transaction::components::Amount;
 
-    use crate::lightclient::lightclient_config::UnitTestNetwork;
     use crate::{
         blaze::test_utils::{incw_to_string, FakeCompactBlockList, FakeTransaction},
         lightclient::{

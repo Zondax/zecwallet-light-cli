@@ -21,7 +21,6 @@ use sha2::{Digest, Sha256};
 use tokio::sync::RwLock;
 use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 
-use zcash_note_encryption::{EphemeralKeyBytes, NoteEncryption};
 use zcash_primitives::{
     block::BlockHash,
     consensus::{self, BlockHeight, BranchId, TEST_NETWORK},
@@ -219,7 +218,7 @@ impl FakeTransaction {
             value: Amount::from_u64(value).unwrap(),
             script_pubkey: TransparentAddress::PublicKey(taddr_bytes.try_into().unwrap()).script(),
         });
-        self.td.transparent_bundle = Some(t_bundle);
+        self.td.transparent_bundle = Some(t_bundle.clone());
 
         self.td = TransactionData::from_parts(
             self.td.version(),
