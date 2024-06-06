@@ -4,3 +4,7 @@
 .DS_Store
 *.json.txt
 /build
+
+.idea/vcs.xml
+
+.idea/workspace.xml

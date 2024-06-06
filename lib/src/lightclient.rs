@@ -39,7 +39,7 @@ use zcash_primitives::{
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
-        use zcash_hsmbuilder::txprover::LocalTxProver;
+        use ledger_zcash_builder::txprover::LocalTxProver;
     } else {
         use zcash_proofs::prover::LocalTxProver;
     }

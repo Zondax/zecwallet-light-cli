@@ -18,7 +18,7 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "hsm-compat")] {
         mod txprover_trait {
             use zcash_primitives::sapling::prover::TxProver;
-            use zcash_hsmbuilder::txprover::HsmTxProver;
+            use ledger_zcash_builder::txprover::HsmTxProver;
 
             /// This trait is a marker trait used to identify tx provers
             /// that are HSM compatible as well as normal tx provers
@@ -31,7 +31,7 @@ cfg_if::cfg_if! {
         }
 
         pub use txprover_trait::BothTxProver as TxProver;
-        pub use zcash_hsmbuilder::txbuilder::SaplingMetadata;
+        pub use ledger_zcash_builder::txbuilder::SaplingMetadata;
     } else {
         pub use zcash_primitives::sapling::prover::TxProver;
         pub use zcash_primitives::transaction::builder::SaplingMetadata;

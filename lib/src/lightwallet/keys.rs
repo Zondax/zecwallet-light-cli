@@ -12,8 +12,6 @@ use zcash_primitives::{
 mod txbuilder;
 pub use txbuilder::{Builder, SaplingMetadata, TxProver};
 
-pub use in_memory::InMemoryBuilder;
-
 /// Sha256(Sha256(value))
 pub fn double_sha256(payload: &[u8]) -> Vec<u8> {
     let h1 = Sha256::digest(&payload);
