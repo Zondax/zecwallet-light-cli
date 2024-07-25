@@ -11,6 +11,9 @@ jobs:
         os: [ubuntu-latest]
 
     steps:
+      - name: Install system dependencies
+        run: apt-get update && apt-get install -y libudev-dev
+
       - uses: actions/checkout@v1
       - uses: actions-rs/toolchain@v1
         with:
