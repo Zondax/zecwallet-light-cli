@@ -398,13 +398,21 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
             .keys()
             .last()
             .cloned()
-            .map(|path| {
+            .map(|mut path| {
+                // Go up to 5, but this could be any arbitrary number... just want to cover some addresses deep on each "page"
+                // In case other wallets derive on the latest path item only
+                if path[4] >= 5 {
+                    path[2] += 1;
+                    path[4] = 0;
+                } else {
+                    path[4] += 1;
+                }
                 [
                     ChildIndex::from_index(path[0]),
                     ChildIndex::from_index(path[1]),
                     ChildIndex::from_index(path[2]),
                     ChildIndex::from_index(path[3]),
-                    ChildIndex::from_index(path[4] + 1),
+                    ChildIndex::from_index(path[4]),
                 ]
             })
             .unwrap_or_else(|| InMemoryKeys::<P>::t_derivation_path(self.config.get_coin_type(), 0));
