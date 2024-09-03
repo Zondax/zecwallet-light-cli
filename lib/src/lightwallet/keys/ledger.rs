@@ -390,32 +390,52 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
     }
 
     /// Create a new transparent address with path +1 from the latest one
-    pub async fn add_taddr(&mut self) -> String {
-        //find the highest path we have
-        let path = self
-            .transparent_addrs
-            .get_mut()
-            .keys()
-            .last()
-            .cloned()
-            .map(|mut path| {
-                // Go up to 5, but this could be any arbitrary number... just want to cover some addresses deep on each "page"
-                // In case other wallets derive on the latest path item only
-                if path[4] >= 5 {
-                    path[2] += 1;
-                    path[4] = 0;
-                } else {
-                    path[4] += 1;
+    pub async fn add_taddr(&mut self, optional_path: &str) -> String {
+        let path = match optional_path {
+            "" => {
+                //find the highest path we have
+                self
+                    .transparent_addrs
+                    .get_mut()
+                    .keys()
+                    .last()
+                    .cloned()
+                    .map(|mut path| {
+                        // Go up to 5, but this could be any arbitrary number... just want to cover some addresses deep on each "page"
+                        // In case other wallets derive on the latest path item only
+                        if path[4] >= 3 {
+                            path[2] += 1;
+                            path[4] = 0;
+                        } else {
+                            path[4] += 1;
+                        }
+                        [
+                            ChildIndex::from_index(path[0]),
+                            ChildIndex::from_index(path[1]),
+                            ChildIndex::from_index(path[2]),
+                            ChildIndex::from_index(path[3]),
+                            ChildIndex::from_index(path[4]),
+                        ]
+                    })
+                    .unwrap_or_else(|| InMemoryKeys::<P>::t_derivation_path(self.config.get_coin_type(), 0))
+            },
+            val=>  {
+                match convert_path(val, 5) {
+                    Ok(addr) =>
+                        [
+                            addr.get(0).cloned().unwrap(),
+                            addr.get(1).cloned().unwrap(),
+                            addr.get(2).cloned().unwrap(),
+                            addr.get(3).cloned().unwrap(),
+                            addr.get(4).cloned().unwrap()
+                        ],
+                    Err(e) =>
+                        {
+                            return format!("Error: {:?}", e);
+                        }
                 }
-                [
-                    ChildIndex::from_index(path[0]),
-                    ChildIndex::from_index(path[1]),
-                    ChildIndex::from_index(path[2]),
-                    ChildIndex::from_index(path[3]),
-                    ChildIndex::from_index(path[4]),
-                ]
-            })
-            .unwrap_or_else(|| InMemoryKeys::<P>::t_derivation_path(self.config.get_coin_type(), 0));
+            }
+        };
 
         let key = self.get_t_pubkey(&path).await;
 
@@ -426,22 +446,42 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
     }
 
     /// Create a new shielded address with path +1 from the latest one
-    pub async fn add_zaddr(&mut self) -> String {
-        //find the highest path we have
-        let path = self
-            .shielded_addrs
-            .get_mut()
-            .keys()
-            .last()
-            .cloned()
-            .map(|path| {
-                [
-                    ChildIndex::from_index(path[0]),
-                    ChildIndex::from_index(path[1]),
-                    ChildIndex::from_index(path[2] + 1),
-                ]
-            })
-            .unwrap_or_else(|| InMemoryKeys::<P>::z_derivation_path(self.config.get_coin_type(), 0));
+    pub async fn add_zaddr(&mut self, optional_path: &str) -> String {
+        let path = match optional_path {
+            "" => {
+                //find the highest path we have
+
+                    self
+                    .shielded_addrs
+                    .get_mut()
+                    .keys()
+                    .last()
+                    .cloned()
+                    .map(|path| {
+                        [
+                            ChildIndex::from_index(path[0]),
+                            ChildIndex::from_index(path[1]),
+                            ChildIndex::from_index(path[2] + 1),
+                        ]
+                    })
+                    .unwrap_or_else(|| InMemoryKeys::<P>::z_derivation_path(self.config.get_coin_type(), 0))
+
+            },
+            val => {
+                match convert_path(val, 3) {
+                    Ok(addr) =>
+                        [
+                            addr.get(0).cloned().unwrap(),
+                            addr.get(1).cloned().unwrap(),
+                            addr.get(2).cloned().unwrap()
+                        ],
+                    Err(e) =>
+                        {
+                            return format!("Error: {:?}", e);
+                        }
+                }
+            }
+        };
 
         let addr = self.get_z_payment_address(&path).await;
 
@@ -829,4 +869,24 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
 
         Ok(tx)
     }
+}
+
+fn convert_path(path_str: &str, child_index_len: usize) -> Result<Vec<ChildIndex>, &'static str> {
+    let path_parts: Vec<&str> = path_str.split('/').collect();
+    let mut path = Vec::new();
+
+    if path_parts.len() != child_index_len{
+        return Err("invalid path");
+    }
+
+    for part in path_parts {
+        let value = if part.ends_with('\'') {
+            0x80000000 | part.trim_end_matches('\'').parse::<u32>().unwrap()
+        } else {
+            part.parse::<u32>().unwrap()
+        };
+        path.push(ChildIndex::from_index(value));
+    }
+
+    Ok(path)
 }

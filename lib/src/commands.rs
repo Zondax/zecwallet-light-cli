@@ -1195,7 +1195,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NewAddress
         let mut h = vec![];
         h.push("Create a new address in this wallet");
         h.push("Usage:");
-        h.push("new [z | t]");
+        h.push("new [z | t] [path]");
         h.push("");
         h.push("Example:");
         h.push("To create a new z address:");
@@ -1207,12 +1207,12 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Command<P> for NewAddress
         "Create a new address in this wallet".to_string()
     }
     fn exec(&self, args: &[&str], lightclient: &LightClient<P>) -> String {
-        if args.len() != 1 {
+        if args.len() < 1 {
             return format!("No address type specified\n{}", Command::<P>::help(self));
         }
 
         RT.block_on(async move {
-            match lightclient.do_new_address(args[0]).await {
+            match lightclient.do_new_address(args[0], args[1]).await {
                 Ok(j) => j,
                 Err(e) => object! { "error" => e },
             }

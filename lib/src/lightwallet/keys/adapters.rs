@@ -342,20 +342,20 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
     }
 
     /// Create a new transparent address
-    pub async fn add_taddr(&mut self) -> String {
+    pub async fn add_taddr(&mut self, path: &str) -> String {
         match self {
             Self::Memory(this) => this.add_taddr(),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this.add_taddr().await,
+            Self::Ledger(this) => this.add_taddr(path).await,
         }
     }
 
     /// Create a new shielded address
-    pub async fn add_zaddr(&mut self) -> String {
+    pub async fn add_zaddr(&mut self, path: &str) -> String {
         match self {
             Self::Memory(this) => this.add_zaddr(),
             #[cfg(feature = "ledger-support")]
-            Self::Ledger(this) => this.add_zaddr().await,
+            Self::Ledger(this) => this.add_zaddr(path).await,
         }
     }
 
