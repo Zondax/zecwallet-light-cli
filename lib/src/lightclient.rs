@@ -991,8 +991,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             return Err("Wallet is locked".to_string());
         }
 
-        let new_address = {
-            let addr = match addr_type {
+        let (new_address, path) = {
+            let (addr, path) = match addr_type {
                 "z" => self.wallet.keys().write().await.add_zaddr(path).await,
                 "t" => self.wallet.keys().write().await.add_taddr(path).await,
                 _ => {
@@ -1008,13 +1008,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 return Err(e);
             }
 
-            addr
+            (addr, path)
         };
 
         //TODO: re-enable this when we have proper checks for ledger support
         // self.do_save(true).await?;
 
-        Ok(array![new_address])
+        Ok(array![new_address, path])
     }
 
     /// Convinence function to determine what type of key this is and import it

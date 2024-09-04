@@ -390,7 +390,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
     }
 
     /// Create a new transparent address with path +1 from the latest one
-    pub async fn add_taddr(&mut self, optional_path: &str) -> String {
+    pub async fn add_taddr(&mut self, optional_path: &str) -> (String, String) {
         let path = match optional_path {
             "" => {
                 //find the highest path we have
@@ -420,7 +420,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
                     .unwrap_or_else(|| InMemoryKeys::<P>::t_derivation_path(self.config.get_coin_type(), 0))
             },
             val=>  {
-                match convert_path(val, 5) {
+                match convert_path_to_num(val, 5) {
                     Ok(addr) =>
                         [
                             addr.get(0).cloned().unwrap(),
@@ -429,9 +429,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
                             addr.get(3).cloned().unwrap(),
                             addr.get(4).cloned().unwrap()
                         ],
-                    Err(e) =>
-                        {
-                            return format!("Error: {:?}", e);
+                    Err(e) => {
+                            return (format!("Error: {:?}", e), "".to_string());
                         }
                 }
             }
@@ -439,14 +438,25 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
         let key = self.get_t_pubkey(&path).await;
 
-        match key {
+        let addr = match key {
             Ok(key) => compute_taddr(&key, &self.config.base58_pubkey_address(), &[]),
-            Err(e) => format!("Error: {:?}", e),
-        }
+            Err(e) => {
+                return (format!("Error: {:?}", e), "".to_string());
+            }
+        };
+
+        let path_str =  match convert_path_to_str(path.to_vec()) {
+            Ok(v) => v,
+            Err(e) => {
+                return (format!("Error: {:?}", e), "".to_string());
+            },
+        };
+
+        (addr, path_str)
     }
 
     /// Create a new shielded address with path +1 from the latest one
-    pub async fn add_zaddr(&mut self, optional_path: &str) -> String {
+    pub async fn add_zaddr(&mut self, optional_path: &str) -> (String,String) {
         let path = match optional_path {
             "" => {
                 //find the highest path we have
@@ -468,16 +478,15 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
             },
             val => {
-                match convert_path(val, 3) {
+                match convert_path_to_num(val, 3) {
                     Ok(addr) =>
                         [
                             addr.get(0).cloned().unwrap(),
                             addr.get(1).cloned().unwrap(),
                             addr.get(2).cloned().unwrap()
                         ],
-                    Err(e) =>
-                        {
-                            return format!("Error: {:?}", e);
+                    Err(e) => {
+                            return (format!("Error: {:?}", e), "".to_string());
                         }
                 }
             }
@@ -485,10 +494,21 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LedgerKeystore<P> {
 
         let addr = self.get_z_payment_address(&path).await;
 
-        match addr {
+        let addr = match addr {
             Ok(addr) => encode_payment_address(self.config.hrp_sapling_address(), &addr),
-            Err(e) => format!("Error: {:?}", e),
-        }
+            Err(e) => {
+                    return (format!("Error: {:?}", e), "".to_string());
+                }
+        };
+
+        let path_str =  match convert_path_to_str(path.to_vec()) {
+            Ok(v) => v,
+            Err(e) => {
+                    return (format!("Error: {:?}", e), "".to_string());
+                },
+        };
+
+        (addr, path_str)
     }
 
     pub fn config(&self) -> LightClientConfig<P> {
@@ -871,7 +891,7 @@ impl<'a, P: Parameters + Send + Sync> Builder for LedgerBuilder<'a, P> {
     }
 }
 
-fn convert_path(path_str: &str, child_index_len: usize) -> Result<Vec<ChildIndex>, &'static str> {
+fn convert_path_to_num(path_str: &str, child_index_len: usize) -> Result<Vec<ChildIndex>, &'static str> {
     let path_parts: Vec<&str> = path_str.split('/').collect();
     let mut path = Vec::new();
 
@@ -889,4 +909,24 @@ fn convert_path(path_str: &str, child_index_len: usize) -> Result<Vec<ChildIndex
     }
 
     Ok(path)
+}
+
+
+fn convert_path_to_str(path_num: Vec<ChildIndex>) -> Result<String, &'static str> {
+    let mut path = Vec::new();
+
+    for part in path_num.into_iter() {
+        let (value, isHardened) = match part {
+            ChildIndex::NonHardened(num) => (num, false),
+            ChildIndex::Hardened(num) => (num, true)
+        };
+
+        let mut value: String = String::from(value);
+       if isHardened {
+           value.push('\'');
+       }
+        path.push(value);
+    }
+
+    Ok(path.join("/"))
 }
