@@ -921,7 +921,7 @@ fn convert_path_to_str(path_num: Vec<ChildIndex>) -> Result<String, &'static str
             ChildIndex::Hardened(num) => (num, true)
         };
 
-        let mut value: String = String::from(value);
+        let mut value: String = value.to_string();
        if isHardened {
            value.push('\'');
        }
