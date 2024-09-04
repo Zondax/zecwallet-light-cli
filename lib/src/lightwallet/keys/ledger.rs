@@ -916,15 +916,16 @@ fn convert_path_to_str(path_num: Vec<ChildIndex>) -> Result<String, &'static str
     let mut path = Vec::new();
 
     for part in path_num.into_iter() {
-        let (value, isHardened) = match part {
+        let (value, is_hardened) = match part {
             ChildIndex::NonHardened(num) => (num, false),
             ChildIndex::Hardened(num) => (num, true)
         };
 
         let mut value: String = value.to_string();
-       if isHardened {
+        if is_hardened {
            value.push('\'');
-       }
+        }
+
         path.push(value);
     }
 
