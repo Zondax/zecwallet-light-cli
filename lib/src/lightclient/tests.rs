@@ -95,7 +95,7 @@ fn new_wallet_from_sk() {
         );
 
         // New address should be derived from the seed
-        lc.do_new_address("z").await.unwrap();
+        lc.do_new_address("z", "").await.unwrap();
 
         let addresses = lc.do_address().await;
         assert_eq!(addresses["z_addresses"].len(), 2);
@@ -131,7 +131,7 @@ fn new_wallet_from_vk() {
         );
 
         // New address should be derived from the seed
-        lc.do_new_address("z").await.unwrap();
+        lc.do_new_address("z", "").await.unwrap();
 
         let addresses = lc.do_address().await;
         assert_eq!(addresses["z_addresses"].len(), 2);

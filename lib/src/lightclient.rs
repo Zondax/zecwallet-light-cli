@@ -985,16 +985,16 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
     }
 
     /// Create a new address, deriving it from the seed.
-    pub async fn do_new_address(&self, addr_type: &str) -> Result<JsonValue, String> {
+    pub async fn do_new_address(&self, addr_type: &str, path: &str) -> Result<JsonValue, String> {
         if !self.wallet.is_unlocked_for_spending().await {
             error!("Wallet is locked");
             return Err("Wallet is locked".to_string());
         }
 
-        let new_address = {
-            let addr = match addr_type {
-                "z" => self.wallet.keys().write().await.add_zaddr().await,
-                "t" => self.wallet.keys().write().await.add_taddr().await,
+        let (new_address, path) = {
+            let (addr, path) = match addr_type {
+                "z" => self.wallet.keys().write().await.add_zaddr(path).await,
+                "t" => self.wallet.keys().write().await.add_taddr(path).await,
                 _ => {
                     let e = format!("Unrecognized address type: {}", addr_type);
                     error!("{}", e);
@@ -1008,13 +1008,13 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
                 return Err(e);
             }
 
-            addr
+            (addr, path)
         };
 
         //TODO: re-enable this when we have proper checks for ledger support
         // self.do_save(true).await?;
 
-        Ok(array![new_address])
+        Ok(array![new_address, path])
     }
 
     /// Convinence function to determine what type of key this is and import it

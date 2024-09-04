@@ -1248,7 +1248,7 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightWallet<P> {
                 Some(first) => first,
                 None => {
                     let mut guard = self.keys.write().await;
-                    guard.add_zaddr().await;
+                    guard.add_zaddr("").await;
                     guard.first_zkey().await.unwrap()
                 }
             };
