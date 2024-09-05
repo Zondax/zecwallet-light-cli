@@ -225,18 +225,26 @@ impl<P: consensus::Parameters> LedgerKeystore<P> {
     }
 
     /// Retrieve all the cached/known transparent public keys
-    pub async fn get_all_tkeys(&self) -> impl Iterator<Item = SecpPublicKey> {
+    pub async fn get_all_tkeys(&self) -> (impl Iterator<Item = SecpPublicKey>, impl Iterator<Item = [u32; 5]>) {
         let guard = self.transparent_addrs.read().await;
 
-        guard.values().cloned().collect::<Vec<_>>().into_iter()
+        let paths = guard.keys().cloned().collect::<Vec<_>>().into_iter();
+        let pks = guard.values().cloned().collect::<Vec<_>>().into_iter();
+
+        (pks, paths)
     }
 
     /// Retrieve all the cached/known transparent addresses
     ///
     /// Convenient wrapper over `get_all_tkeys`
-    pub async fn get_all_taddrs(&self) -> impl Iterator<Item = String> {
+    pub async fn get_all_taddrs(&self) -> (impl Iterator<Item = String>, impl Iterator<Item = String>) {
         let prefix = self.config.base58_pubkey_address();
-        self.get_all_tkeys().await.map(move |k| compute_taddr(&k, &prefix, &[]))
+        let (pks, paths) = self.get_all_tkeys().await;
+
+        let pks_map = pks.map(move |k| compute_taddr(&k, &prefix, &[]));
+        let paths_map = paths.map(move |p| convert_path_slice_to_string(p));
+
+        (pks_map, paths_map)
     }
 
     /// Retrieve a HashMap of transparent addresses to public key
@@ -930,4 +938,13 @@ fn convert_path_to_str(path_num: Vec<ChildIndex>) -> Result<String, &'static str
     }
 
     Ok(path.join("/"))
+}
+
+fn convert_path_slice_to_string(path_slice: [u32; 5]) -> String{
+    let mut path_vec = Vec::new();
+    for i in 0..path_slice.len() {
+        path_vec.push( ChildIndex::from_index(path_slice[i]));
+    }
+
+    convert_path_to_str(path_vec).unwrap()
 }

@@ -37,7 +37,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchTaddrTxns<P> {
         let keys = self.keys.clone();
 
         tokio::spawn(async move {
-            let taddrs = keys.read().await.get_all_taddrs().await.collect::<Vec<_>>();
+            let (taddrs_res, _) = keys.read().await.get_all_taddrs().await;
+            let taddrs = taddrs_res.collect::<Vec<_>>();
 
             // Fetch all transactions for all t-addresses in parallel, and process them in height order
             let req = (taddrs, start_height, end_height);

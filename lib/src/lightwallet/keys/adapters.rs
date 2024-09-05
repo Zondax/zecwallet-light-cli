@@ -170,16 +170,29 @@ impl<P: consensus::Parameters + Send + Sync + 'static> Keystores<P> {
     }
 
     /// Retrieve all known transparent addresses in the keystore
-    pub async fn get_all_taddrs(&self) -> impl Iterator<Item = String> {
+    pub async fn get_all_taddrs(&self) -> (impl Iterator<Item = String>, impl Iterator<Item = String>) {
         //see comment inside `get_all_ivks`
 
-        let (memory, ledger) = match self {
+        let (memory, ledger_result) = match self {
             Self::Memory(this) => (Some(this.get_all_taddrs().into_iter()), None),
             #[cfg(feature = "ledger-support")]
             Self::Ledger(this) => (None, Some(this.get_all_taddrs().await)),
         };
 
-        memory.into_iter().flatten().chain(ledger.into_iter().flatten())
+        let empty : Vec<String> = Vec::new();
+        let b = Some(empty.into_iter());
+        match ledger_result {
+            None => {
+                (memory.into_iter().flatten().chain(None.into_iter().flatten()), b.into_iter().flatten().chain(None.into_iter().flatten()))
+            }
+            Some((addrs, paths)) => {
+                let a = memory.into_iter().flatten().chain(Some(addrs).into_iter().flatten());
+                let c = b.into_iter().flatten().chain(Some(paths).into_iter().flatten());
+
+                (a, c)
+            }
+        }
+
     }
 
     /// Retrieve all known ZAddrs in the keystore

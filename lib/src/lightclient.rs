@@ -494,18 +494,21 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
             .collect::<Vec<_>>();
 
         // Collect t addresses
-        let t_addresses = self
+        let (t_addresses_res, t_paths_res) = self
             .wallet
             .keys()
             .read()
             .await
             .get_all_taddrs()
-            .await
-            .collect::<Vec<_>>();
+            .await;
+
+        let t_addresses= t_addresses_res.collect::<Vec<_>>();
+        let t_paths= t_paths_res.collect::<Vec<_>>();
 
         object! {
             "z_addresses" => z_addresses,
             "t_addresses" => t_addresses,
+            "t_paths" => t_paths,
         }
     }
 
@@ -530,13 +533,18 @@ impl<P: consensus::Parameters + Send + Sync + 'static> LightClient<P> {
 
         // Collect t addresses
         let mut t_addresses = vec![];
-        for taddress in self.wallet.keys().read().await.get_all_taddrs().await {
+        let (addresses, paths) = self.wallet.keys().read().await.get_all_taddrs().await;
+        let paths_vec = paths.collect::<Vec<_>>();
+        let default_path = String::from("");
+        for (i, taddress) in addresses.enumerate() {
             // Get the balance for this address
             let balance = self.wallet.tbalance(Some(taddress.clone())).await;
+            let path = paths_vec.get(i).unwrap_or(&default_path);
 
             t_addresses.push(object! {
                 "address" => taddress,
                 "balance" => balance,
+                "path" => path.clone(),
             });
         }
 

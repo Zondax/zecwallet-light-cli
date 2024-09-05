@@ -170,7 +170,8 @@ impl<P: consensus::Parameters + Send + Sync + 'static> FetchFullTxns<P> {
         // Collect our t-addresses for easy checking
         // by collecting into a set we do more efficient lookup
         // and avoid duplicates (shouldn't be any anyways)
-        let taddrs_set = keys.read().await.get_all_taddrs().await.collect::<HashSet<_>>();
+        let (taddrs,_) = keys.read().await.get_all_taddrs().await;
+        let taddrs_set = taddrs.collect::<HashSet<_>>();
 
         // Step 1: Scan all transparent outputs to see if we recieved any money
         if let Some(t_bundle) = tx.transparent_bundle() {
