@@ -53,11 +53,11 @@ group = "0.12"
 
 rust-embed = { version = "6.3.0", features = ["debug-embed"] }
 
-zcash_primitives = { git = "https://github.com/Zondax/librustzcash", rev = "256b43eae6e2b8571af167bfa1f7a603855fbde6", features = ["transparent-inputs"], package = "zcash_primitives" }
-zcash_client_backend = { git = "https://github.com/Zondax/librustzcash", rev = "256b43eae6e2b8571af167bfa1f7a603855fbde6"}
-zcash_proofs = { git = "https://github.com/Zondax/librustzcash", rev = "256b43eae6e2b8571af167bfa1f7a603855fbde6", features = ["multicore"]}
-zcash_encoding = { git = "https://github.com/Zondax/librustzcash", rev = "256b43eae6e2b8571af167bfa1f7a603855fbde6",  package = "zcash_encoding" }
-zcash_note_encryption = { git = "https://github.com/Zondax/librustzcash", rev = "256b43eae6e2b8571af167bfa1f7a603855fbde6",  package = "zcash_note_encryption", features = ["pre-zip-212"] }
+zcash_primitives = { git = "https://github.com/Zondax/librustzcash", rev = "112eedd27b2e51b9e1b77603a776cd78e738c3ae", features = ["transparent-inputs"], package = "zcash_primitives" }
+zcash_client_backend = { git = "https://github.com/Zondax/librustzcash", rev = "112eedd27b2e51b9e1b77603a776cd78e738c3ae"}
+zcash_proofs = { git = "https://github.com/Zondax/librustzcash", rev = "112eedd27b2e51b9e1b77603a776cd78e738c3ae", features = ["multicore"]}
+zcash_encoding = { git = "https://github.com/Zondax/librustzcash", rev = "112eedd27b2e51b9e1b77603a776cd78e738c3ae",  package = "zcash_encoding" }
+zcash_note_encryption = { git = "https://github.com/Zondax/librustzcash", rev = "112eedd27b2e51b9e1b77603a776cd78e738c3ae",  package = "zcash_note_encryption", features = ["pre-zip-212"] }
 
 zcash-hsmbuilder = { git = "https://github.com/Zondax/ledger-zcash-rs", tag = "v1.0.0", default-features = false, features = ["zecwallet-compat"], optional = true }
 ledger-zcash = { git = "https://github.com/Zondax/ledger-zcash-rs", tag = "v1.0.0", default-features = false, features = ["zecwallet-compat"], optional = true }
